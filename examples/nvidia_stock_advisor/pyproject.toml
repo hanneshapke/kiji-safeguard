@@ -17,4 +17,4 @@ dependencies = [
 package = false
 
 [tool.uv.sources]
-kiji-safeguard = { path = "../../" }
+kiji-safeguard = { path = "../../", editable = true }
