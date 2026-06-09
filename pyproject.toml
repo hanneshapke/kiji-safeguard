@@ -27,4 +27,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["kiji_safeguard", "server", "server.backend"]
+packages = ["kiji_safeguard", "server", "server.backend", "server.frontend"]
+
+[tool.setuptools.package-data]
+"server.frontend" = ["*.html"]

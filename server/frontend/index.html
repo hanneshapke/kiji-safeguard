@@ -1,0 +1,1652 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Kiji Safeguard — MCP Server Registry</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            :root {
+                --bg: #f8f4e4;
+                --bg-elev: #fffef9;
+                --bg-elev-2: #eafaf4;
+                --bg-tint: #c7fff1;
+                --line: rgba(26, 26, 26, 0.12);
+                --line-soft: rgba(26, 26, 26, 0.07);
+                --text: #1a1a1a;
+                --text-dim: rgba(26, 26, 26, 0.6);
+                --text-faint: rgba(26, 26, 26, 0.42);
+                --accent: #3edab2;
+                --accent-strong: #149e7f;
+                --accent-ink: #1a1a1a;
+                --accent-glow: rgba(62, 218, 178, 0.18);
+                --verified: #12a07e;
+                --pending: #b07d24;
+                --revoked: #d65a52;
+                --blue: #7092f2;
+                --blue-soft: #9bb3f6;
+                --radius: 14px;
+                --mono:
+                    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo,
+                    monospace;
+                --sans:
+                    "IBM Plex Sans", -apple-system, BlinkMacSystemFont,
+                    sans-serif;
+            }
+
+            * {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            html {
+                scroll-behavior: smooth;
+            }
+
+            body {
+                font-family: var(--sans);
+                background: var(--bg);
+                color: var(--text);
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+                min-height: 100vh;
+                position: relative;
+                overflow-x: hidden;
+            }
+
+            /* ambient background: faint grid + radial glow */
+            body::before {
+                content: "";
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+                pointer-events: none;
+                background-image:
+                    linear-gradient(
+                        to right,
+                        var(--line-soft) 1px,
+                        transparent 1px
+                    ),
+                    linear-gradient(
+                        to bottom,
+                        var(--line-soft) 1px,
+                        transparent 1px
+                    );
+                background-size: 46px 46px;
+                -webkit-mask-image: radial-gradient(
+                    ellipse 80% 60% at 50% 0%,
+                    #000 30%,
+                    transparent 80%
+                );
+                mask-image: radial-gradient(
+                    ellipse 80% 60% at 50% 0%,
+                    #000 30%,
+                    transparent 80%
+                );
+                opacity: 0.5;
+            }
+            body::after {
+                content: "";
+                position: fixed;
+                inset: 0;
+                z-index: 0;
+                pointer-events: none;
+                background: radial-gradient(
+                    ellipse 60% 50% at 50% -8%,
+                    var(--accent-glow),
+                    transparent 60%
+                );
+            }
+
+            .shell {
+                position: relative;
+                z-index: 1;
+                max-width: 1080px;
+                margin: 0 auto;
+                padding: 0 24px;
+            }
+
+            /* ---------- header ---------- */
+            header {
+                border-bottom: 1px solid var(--line-soft);
+                position: sticky;
+                top: 0;
+                z-index: 20;
+                background: rgba(248, 244, 228, 0.78);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+            }
+            .nav {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                height: 64px;
+            }
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                text-decoration: none;
+                color: var(--text);
+            }
+            .seal {
+                width: 30px;
+                height: 30px;
+                flex: none;
+                display: grid;
+                place-items: center;
+                border: 1px solid var(--line);
+                border-radius: 8px;
+                background: linear-gradient(
+                    145deg,
+                    var(--bg-elev-2),
+                    var(--bg-elev)
+                );
+            }
+            .seal svg {
+                width: 17px;
+                height: 17px;
+            }
+            .brand b {
+                font-weight: 600;
+                font-size: 15px;
+                letter-spacing: -0.01em;
+            }
+            .brand .reg {
+                font-family: var(--mono);
+                font-size: 10px;
+                color: var(--text-faint);
+                text-transform: uppercase;
+                letter-spacing: 0.14em;
+                display: block;
+                margin-top: 1px;
+            }
+            .nav-right {
+                display: flex;
+                align-items: center;
+                gap: 22px;
+            }
+            .nav-link {
+                font-family: var(--mono);
+                font-size: 12.5px;
+                color: var(--text-dim);
+                text-decoration: none;
+                transition: color 0.18s;
+            }
+            .nav-link:hover {
+                color: var(--text);
+            }
+            .status {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                font-family: var(--mono);
+                font-size: 11.5px;
+                color: var(--text-dim);
+            }
+            .dot {
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: var(--verified);
+                position: relative;
+            }
+            .dot::after {
+                content: "";
+                position: absolute;
+                inset: -4px;
+                border-radius: 50%;
+                border: 1px solid var(--verified);
+                opacity: 0.6;
+                animation: ping 2.2s ease-out infinite;
+            }
+            @keyframes ping {
+                0% {
+                    transform: scale(0.6);
+                    opacity: 0.7;
+                }
+                80%,
+                100% {
+                    transform: scale(1.8);
+                    opacity: 0;
+                }
+            }
+            @media (max-width: 680px) {
+                .nav-right .nav-link {
+                    display: none;
+                }
+            }
+
+            /* ---------- hero / lookup ---------- */
+            .hero {
+                padding: 72px 0 38px;
+                text-align: center;
+            }
+            .eyebrow {
+                font-family: var(--mono);
+                font-size: 11.5px;
+                letter-spacing: 0.22em;
+                text-transform: uppercase;
+                color: var(--accent-strong);
+                display: inline-flex;
+                align-items: center;
+                gap: 9px;
+                margin-bottom: 22px;
+            }
+            .eyebrow .bar {
+                width: 26px;
+                height: 1px;
+                background: var(--accent);
+                opacity: 0.5;
+            }
+            h1 {
+                font-size: clamp(34px, 6vw, 54px);
+                font-weight: 700;
+                letter-spacing: -0.035em;
+                line-height: 1.04;
+                margin-bottom: 16px;
+            }
+            h1 .mute {
+                color: var(--text-faint);
+            }
+            .sub {
+                color: var(--text-dim);
+                font-size: 16px;
+                max-width: 480px;
+                margin: 0 auto 38px;
+            }
+
+            .lookup {
+                max-width: 640px;
+                margin: 0 auto;
+            }
+            .field {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                background: var(--bg-elev);
+                border: 1px solid var(--line);
+                border-radius: var(--radius);
+                padding: 7px 7px 7px 16px;
+                transition:
+                    border-color 0.2s,
+                    box-shadow 0.2s;
+            }
+            .field:focus-within {
+                border-color: var(--accent);
+                box-shadow: 0 0 0 4px var(--accent-glow);
+            }
+            .field .pre {
+                font-family: var(--mono);
+                font-size: 14px;
+                color: var(--text-faint);
+                user-select: none;
+            }
+            .field input {
+                flex: 1;
+                background: none;
+                border: none;
+                outline: none;
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 14px;
+                letter-spacing: 0.01em;
+                min-width: 0;
+            }
+            .field input::placeholder {
+                color: var(--text-faint);
+            }
+            .btn {
+                font-family: var(--sans);
+                font-weight: 600;
+                font-size: 14px;
+                background: var(--accent);
+                color: var(--accent-ink);
+                border: none;
+                border-radius: 9px;
+                padding: 11px 20px;
+                cursor: pointer;
+                flex: none;
+                transition:
+                    transform 0.12s,
+                    filter 0.2s;
+                display: inline-flex;
+                align-items: center;
+                gap: 7px;
+            }
+            .btn:hover {
+                filter: brightness(1.06);
+            }
+            .btn:active {
+                transform: translateY(1px);
+            }
+            .btn svg {
+                width: 15px;
+                height: 15px;
+            }
+            .hint {
+                font-family: var(--mono);
+                font-size: 11.5px;
+                color: var(--text-faint);
+                margin-top: 13px;
+                text-align: center;
+            }
+            .hint b {
+                color: var(--text-dim);
+                font-weight: 500;
+                cursor: pointer;
+                border-bottom: 1px dashed var(--line);
+            }
+            .hint b:hover {
+                color: var(--accent-strong);
+                border-color: var(--accent-strong);
+            }
+
+            /* ---------- stats strip ---------- */
+            .stats {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 1px;
+                background: var(--line-soft);
+                border: 1px solid var(--line-soft);
+                border-radius: var(--radius);
+                overflow: hidden;
+                margin: 8px 0 56px;
+            }
+            .stat {
+                background: var(--bg-elev);
+                padding: 18px 20px;
+            }
+            .stat .n {
+                font-family: var(--mono);
+                font-size: 22px;
+                font-weight: 600;
+                letter-spacing: -0.02em;
+            }
+            .stat .n .u {
+                color: var(--accent-strong);
+                font-size: 14px;
+            }
+            .stat .l {
+                font-size: 11.5px;
+                color: var(--text-dim);
+                font-family: var(--mono);
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                margin-top: 4px;
+            }
+            @media (max-width: 680px) {
+                .stats {
+                    grid-template-columns: repeat(2, 1fr);
+                }
+            }
+
+            /* ---------- recent table ---------- */
+            .sec-head {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                margin-bottom: 18px;
+            }
+            .sec-head h2 {
+                font-size: 17px;
+                font-weight: 600;
+                letter-spacing: -0.01em;
+            }
+            .sec-head .meta {
+                font-family: var(--mono);
+                font-size: 12px;
+                color: var(--text-faint);
+            }
+
+            .table {
+                border: 1px solid var(--line-soft);
+                border-radius: var(--radius);
+                overflow: hidden;
+                background: var(--bg-elev);
+            }
+            .thead {
+                display: grid;
+                grid-template-columns: 48px 1fr 150px 130px 110px;
+                gap: 14px;
+                padding: 13px 20px;
+                border-bottom: 1px solid var(--line-soft);
+                font-family: var(--mono);
+                font-size: 10.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.12em;
+                color: var(--text-faint);
+            }
+            .row {
+                display: grid;
+                grid-template-columns: 48px 1fr 150px 130px 110px;
+                gap: 14px;
+                align-items: center;
+                padding: 15px 20px;
+                border-bottom: 1px solid var(--line-soft);
+                cursor: pointer;
+                transition: background 0.16s;
+                opacity: 0;
+                transform: translateY(6px);
+                animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+            }
+            @keyframes rise {
+                to {
+                    opacity: 1;
+                    transform: none;
+                }
+            }
+            .row:last-child {
+                border-bottom: none;
+            }
+            .row:hover {
+                background: var(--bg-elev-2);
+            }
+            .fp {
+                width: 34px;
+                height: 34px;
+                border-radius: 7px;
+                border: 1px solid var(--line);
+                display: block;
+                background: var(--bg);
+            }
+            .srv-name {
+                font-family: var(--mono);
+                font-size: 13.5px;
+                font-weight: 500;
+                color: var(--text);
+                letter-spacing: 0.01em;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .hash-sub {
+                font-size: 12px;
+                color: var(--text-dim);
+                font-family: var(--mono);
+                margin-top: 3px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .hash-sub .algo {
+                color: var(--text-faint);
+            }
+            .iface {
+                font-family: var(--mono);
+                font-size: 12.5px;
+                color: var(--text-dim);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .when {
+                font-family: var(--mono);
+                font-size: 12.5px;
+                color: var(--text-dim);
+            }
+            .badge {
+                font-family: var(--mono);
+                font-size: 11px;
+                font-weight: 500;
+                padding: 4px 9px;
+                border-radius: 6px;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                text-transform: lowercase;
+                white-space: nowrap;
+            }
+            .badge::before {
+                content: "";
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+            }
+            .badge.verified {
+                color: var(--verified);
+                background: rgba(62, 218, 178, 0.14);
+            }
+            .badge.verified::before {
+                background: var(--verified);
+            }
+            .badge.pending {
+                color: var(--pending);
+                background: rgba(237, 171, 79, 0.18);
+            }
+            .badge.pending::before {
+                background: var(--pending);
+            }
+            .badge.invalid {
+                color: var(--revoked);
+                background: rgba(214, 90, 82, 0.14);
+            }
+            .badge.invalid::before {
+                background: var(--revoked);
+            }
+            .badge.checking {
+                color: var(--text-dim);
+                background: rgba(26, 26, 26, 0.06);
+            }
+            .badge.checking::before {
+                background: var(--text-faint);
+            }
+
+            @media (max-width: 760px) {
+                .thead {
+                    display: none;
+                }
+                .row {
+                    grid-template-columns: 34px 1fr auto;
+                    gap: 12px;
+                }
+                .row .iface,
+                .row .when {
+                    display: none;
+                }
+            }
+
+            /* expandable detail */
+            .detail {
+                grid-column: 1/-1;
+                overflow: hidden;
+                max-height: 0;
+                transition: max-height 0.35s ease;
+            }
+            .row.open {
+                background: var(--bg-elev-2);
+                cursor: default;
+            }
+            .row.open .detail {
+                max-height: 1000px;
+                border-top: 1px solid var(--line-soft);
+                margin-top: 15px;
+                padding-top: 16px;
+            }
+            .dgrid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 13px 32px;
+            }
+            @media (max-width: 600px) {
+                .dgrid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .dcell .k {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: var(--text-faint);
+                margin-bottom: 4px;
+            }
+            .dcell .v {
+                font-family: var(--mono);
+                font-size: 13px;
+                color: var(--text);
+                word-break: break-all;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .copy {
+                cursor: pointer;
+                color: var(--text-faint);
+                transition: color 0.15s;
+                flex: none;
+            }
+            .copy:hover {
+                color: var(--accent-strong);
+            }
+            .copy svg {
+                width: 13px;
+                height: 13px;
+                display: block;
+            }
+            .v.crypto.valid {
+                color: var(--verified);
+                font-weight: 500;
+            }
+            .v.crypto.invalid {
+                color: var(--revoked);
+                font-weight: 500;
+            }
+            .v.crypto.checking,
+            .v.crypto.unsupported {
+                color: var(--text-dim);
+            }
+            .detail-note {
+                margin-top: 14px;
+                display: flex;
+                align-items: flex-start;
+                gap: 7px;
+                font-family: var(--mono);
+                font-size: 11.5px;
+                line-height: 1.45;
+                color: var(--pending);
+                background: rgba(237, 171, 79, 0.1);
+                border: 1px solid rgba(237, 171, 79, 0.28);
+                border-radius: 8px;
+                padding: 9px 12px;
+            }
+
+            /* registered interface (tools / prompts / resources) block */
+            .setup {
+                margin-top: 14px;
+                border: 1px solid var(--line-soft);
+                border-radius: 10px;
+                overflow: hidden;
+                background: var(--bg-elev);
+            }
+            .setup-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+                padding: 9px 13px;
+                border-bottom: 1px solid var(--line-soft);
+                font-family: var(--mono);
+                font-size: 10.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.09em;
+                color: var(--text-faint);
+            }
+            .setup-body {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                max-height: 220px;
+                overflow-y: auto;
+            }
+            @media (max-width: 600px) {
+                .setup-body {
+                    grid-template-columns: 1fr;
+                }
+            }
+            .setup-col {
+                padding: 11px 13px;
+            }
+            .setup-col + .setup-col {
+                border-left: 1px solid var(--line-soft);
+            }
+            .setup-k {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.1em;
+                color: var(--text-faint);
+                margin-bottom: 7px;
+            }
+            .setup ul {
+                list-style: none;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .setup li {
+                font-family: var(--mono);
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            .setup .nm {
+                color: var(--text);
+                font-weight: 500;
+            }
+            .setup .muted {
+                color: var(--text-dim);
+                font-weight: 400;
+            }
+            .setup .sub2 {
+                color: var(--text-faint);
+                font-size: 11px;
+                margin-top: 2px;
+                word-break: break-word;
+            }
+            .vstamp {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                font-weight: 500;
+                padding: 3px 8px;
+                border-radius: 6px;
+                white-space: nowrap;
+            }
+            .vstamp.ok {
+                color: var(--verified);
+                background: rgba(62, 218, 178, 0.14);
+            }
+            .vstamp.bad {
+                color: var(--revoked);
+                background: rgba(214, 90, 82, 0.14);
+            }
+            .vstamp.neutral {
+                color: var(--text-dim);
+                background: rgba(26, 26, 26, 0.06);
+            }
+
+            .empty {
+                padding: 48px 20px;
+                text-align: center;
+                color: var(--text-dim);
+                font-family: var(--mono);
+                font-size: 13px;
+            }
+
+            /* footer */
+            footer {
+                margin-top: 64px;
+                padding: 30px 0 50px;
+                border-top: 1px solid var(--line-soft);
+            }
+            .foot {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                flex-wrap: wrap;
+                gap: 14px;
+            }
+            .foot span {
+                font-family: var(--mono);
+                font-size: 11.5px;
+                color: var(--text-faint);
+            }
+            .foot a {
+                color: var(--text-dim);
+                text-decoration: none;
+            }
+            .foot a:hover {
+                color: var(--accent-strong);
+            }
+
+            /* toast */
+            #toast {
+                position: fixed;
+                left: 50%;
+                bottom: 28px;
+                transform: translateX(-50%) translateY(20px);
+                background: var(--bg-tint);
+                border: 1px solid var(--line);
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 12.5px;
+                padding: 10px 16px;
+                border-radius: 9px;
+                z-index: 50;
+                opacity: 0;
+                pointer-events: none;
+                transition:
+                    opacity 0.2s,
+                    transform 0.2s;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            #toast.show {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+            #toast svg {
+                width: 14px;
+                height: 14px;
+                color: var(--accent-strong);
+            }
+
+            /* load-more button */
+            .load-more {
+                display: block;
+                width: 100%;
+                padding: 14px;
+                margin-top: -1px;
+                background: var(--bg-elev);
+                border: 1px solid var(--line-soft);
+                border-radius: 0 0 var(--radius) var(--radius);
+                color: var(--text-dim);
+                font-family: var(--mono);
+                font-size: 12.5px;
+                cursor: pointer;
+                transition:
+                    background 0.16s,
+                    color 0.16s;
+                text-align: center;
+            }
+            .load-more:hover {
+                background: var(--bg-elev-2);
+                color: var(--text);
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="shell">
+                <nav class="nav">
+                    <a class="brand" href="#">
+                        <span class="seal">
+                            <svg
+                                viewBox="0 0 197 200"
+                                fill="var(--text)"
+                                xmlns="http://www.w3.org/2000/svg"
+                                aria-label="Dataiku"
+                            >
+                                <path
+                                    d="M191.161 139.069H108.456V154.544H191.161V139.069Z"
+                                />
+                                <path
+                                    d="M183.432 13.1855C179.133 5.34204 170.809 0 161.215 0C147.237 0 135.906 11.3412 135.906 25.3323C135.906 26.6678 136.033 27.9609 136.244 29.2328L134.105 31.8614L0.420706 196.935C-0.235857 197.74 -0.10878 198.927 0.696039 199.585C1.43732 200.178 2.51747 200.136 3.19521 199.457L59.469 143.196C69.8469 132.83 83.9101 127.001 98.5874 127.001H118.178C160.982 127.001 186.715 102.601 182.056 52.4664C180.446 35.2108 181.336 27.9397 187.245 20.6474C190.294 16.8953 196.204 9.56055 196.204 9.56055L189.278 11.5108L183.411 13.1643L183.432 13.1855ZM161.745 28.4485C157.953 28.4485 154.882 25.3747 154.882 21.5801C154.882 17.7856 157.953 14.7118 161.745 14.7118C165.536 14.7118 168.607 17.7856 168.607 21.5801C168.607 25.3747 165.536 28.4485 161.745 28.4485Z"
+                                />
+                            </svg>
+                        </span>
+                        <span>
+                            <b>Kiji Safeguard</b>
+                            <span class="reg">MCP Registry</span>
+                        </span>
+                    </a>
+                    <div class="nav-right">
+                        <a class="nav-link" href="#recent">Recent</a>
+                        <a
+                            class="nav-link"
+                            href="https://github.com/hanneshapke/kiji-safeguard#readme"
+                            >Docs</a
+                        >
+                        <a class="nav-link" href="/docs">API</a>
+                        <span class="status"
+                            ><span class="dot"></span>operational</span
+                        >
+                    </div>
+                </nav>
+            </div>
+        </header>
+
+        <main class="shell">
+            <section class="hero">
+                <span class="eyebrow"
+                    ><span class="bar"></span>transparency log<span
+                        class="bar"
+                    ></span
+                ></span>
+                <h1>
+                    Verify any MCP server<br /><span class="mute"
+                        >with a trusted interface.</span
+                    >
+                </h1>
+                <p class="sub">
+                    Look up a server by name or interface hash to inspect its
+                    registered tools, schemas, and descriptions &mdash; and
+                    detect when any of them change.
+                </p>
+
+                <div class="lookup">
+                    <div class="field">
+                        <span class="pre">mcp:</span>
+                        <input
+                            id="q"
+                            type="text"
+                            spellcheck="false"
+                            autocomplete="off"
+                            placeholder="server name or sha256 hash…"
+                            aria-label="Look up by name or hash"
+                        />
+                        <button class="btn" id="lookup">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2.2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <circle cx="11" cy="11" r="7" />
+                                <path d="m20 20-3.5-3.5" />
+                            </svg>
+                            Look up
+                        </button>
+                    </div>
+                    <p class="hint">
+                        Nothing handy? Try a sample &middot;
+                        <b id="sample">loading…</b>
+                    </p>
+                </div>
+            </section>
+
+            <section class="stats">
+                <div class="stat">
+                    <div class="n" id="stat-total">—</div>
+                    <div class="l">registrations</div>
+                </div>
+                <div class="stat">
+                    <div class="n" id="stat-servers">—</div>
+                    <div class="l">servers</div>
+                </div>
+                <div class="stat">
+                    <div class="n" id="stat-tools">—</div>
+                    <div class="l">tools</div>
+                </div>
+                <div class="stat">
+                    <div class="n" id="stat-extras">—</div>
+                    <div class="l">prompts + resources</div>
+                </div>
+            </section>
+
+            <section id="recent">
+                <div class="sec-head">
+                    <h2>Recent Registrations</h2>
+                    <span class="meta" id="count">— entries</span>
+                </div>
+
+                <div class="table" id="table-wrap">
+                    <div class="thead">
+                        <div>fp</div>
+                        <div>server / hash</div>
+                        <div>interface</div>
+                        <div>registered</div>
+                        <div>status</div>
+                    </div>
+                    <div id="rows"></div>
+                </div>
+                <button class="load-more" id="load-more" style="display: none">
+                    Load more servers…
+                </button>
+            </section>
+        </main>
+
+        <footer>
+            <div class="shell foot">
+                <span
+                    >Kiji Safeguard Registry &middot; entries are append-only
+                    and publicly auditable</span
+                >
+                <span
+                    >powered by
+                    <a href="https://dataiku.com" target="_blank" rel="noopener"
+                        >Dataiku's 575 Lab</a
+                    ></span
+                >
+            </div>
+        </footer>
+
+        <div id="toast">
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+            >
+                <path d="m5 12 5 5L20 7" /></svg
+            ><span>Copied to clipboard</span>
+        </div>
+
+        <script>
+            /* ===== State ===== */
+            let allServers = []; /* all loaded registrations */
+            let totalCount = 0;
+            let currentOffset = 0;
+            const PAGE = 20;
+
+            /* ===== Helpers ===== */
+            const esc = (s) =>
+                String(s).replace(
+                    /[&<>"']/g,
+                    (c) =>
+                        ({
+                            "&": "&amp;",
+                            "<": "&lt;",
+                            ">": "&gt;",
+                            '"': "&quot;",
+                            "'": "&#39;",
+                        })[c],
+                );
+
+            function relativeTime(iso) {
+                const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+                if (diff < 60) return "just now";
+                if (diff < 3600) return Math.floor(diff / 60) + "m ago";
+                if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
+                if (diff < 604800) return Math.floor(diff / 86400) + "d ago";
+                return new Date(iso).toLocaleDateString();
+            }
+
+            function formatISO(iso) {
+                try {
+                    return new Date(iso).toLocaleString();
+                } catch {
+                    return iso;
+                }
+            }
+
+            /* ---- canonical hashing, mirroring kiji_safeguard.signer ----
+               Each component is serialised as canonical JSON (sorted keys,
+               compact separators) and hashed with SHA-256; the hex digests
+               are sorted, concatenated and hashed again. */
+            function canonicalJSON(v) {
+                if (v === null || typeof v !== "object")
+                    return JSON.stringify(v);
+                if (Array.isArray(v))
+                    return "[" + v.map(canonicalJSON).join(",") + "]";
+                return (
+                    "{" +
+                    Object.keys(v)
+                        .sort()
+                        .map(
+                            (k) =>
+                                JSON.stringify(k) + ":" + canonicalJSON(v[k]),
+                        )
+                        .join(",") +
+                    "}"
+                );
+            }
+
+            async function sha256hex(text) {
+                const digest = await crypto.subtle.digest(
+                    "SHA-256",
+                    new TextEncoder().encode(text),
+                );
+                return Array.from(new Uint8Array(digest))
+                    .map((b) => b.toString(16).padStart(2, "0"))
+                    .join("");
+            }
+
+            async function aggregateHash(components) {
+                const digests = await Promise.all(
+                    components.map((c) => sha256hex(canonicalJSON(c))),
+                );
+                return sha256hex(digests.sort().join(""));
+            }
+
+            /* Re-derive the interface hash in-browser via WebCrypto and
+               compare it with the registered value. Result is cached on
+               the record. */
+            async function verifyInterface(srv) {
+                if (srv._verify) return srv._verify;
+                let res;
+                if (!(window.crypto && crypto.subtle)) {
+                    res = { state: "unsupported" };
+                } else {
+                    try {
+                        const derived = await aggregateHash(srv.interface);
+                        res =
+                            derived === srv.hash
+                                ? { state: "valid" }
+                                : {
+                                      state: "invalid",
+                                      reason:
+                                          "interface hashes to " +
+                                          derived.slice(0, 12) +
+                                          "… not the registered value",
+                                  };
+                    } catch (e) {
+                        res = { state: "unsupported" };
+                    }
+                }
+                srv._verify = res;
+                return res;
+            }
+
+            const STATUS_MAP = {
+                valid: ["verified", "verified"],
+                invalid: ["invalid", "invalid"],
+                unsupported: ["pending", "registered"],
+            };
+
+            function cryptoCheckText(res) {
+                switch (res.state) {
+                    case "valid":
+                        return "✓ interface hashes to the registered value";
+                    case "invalid":
+                        return "✗ " + (res.reason || "hash mismatch");
+                    case "unsupported":
+                        return "this browser can't recompute the hash";
+                    default:
+                        return "checking…";
+                }
+            }
+
+            /* update a rendered row's badge + check cell once verified */
+            function applyVerification(el, res) {
+                const [cls, label] = STATUS_MAP[res.state] || [
+                    "pending",
+                    "registered",
+                ];
+                const badge = el.querySelector(".badge");
+                if (badge) {
+                    badge.className = "badge " + cls;
+                    badge.textContent = label;
+                }
+                const chk = el.querySelector(".detail .crypto");
+                if (chk) {
+                    chk.className = "v crypto " + res.state;
+                    chk.textContent = cryptoCheckText(res);
+                }
+                const stamp = el.querySelector(".detail .vstamp");
+                if (stamp) {
+                    if (res.state === "valid") {
+                        stamp.className = "vstamp ok";
+                        stamp.textContent = "✓ hashes to registered value";
+                    } else if (res.state === "invalid") {
+                        stamp.className = "vstamp bad";
+                        stamp.textContent = "⚠ does NOT match registered hash";
+                    }
+                }
+            }
+
+            /* verify each freshly rendered row and update it in place */
+            function verifyVisible(rowEls) {
+                rowEls.forEach(async (el) => {
+                    const s = el._srv;
+                    if (!s) return;
+                    const res = await verifyInterface(s);
+                    applyVerification(el, res);
+                });
+            }
+
+            function shortenHash(h) {
+                return (
+                    '<span class="algo">sha256:</span>' +
+                    h.slice(0, 12) +
+                    "…" +
+                    h.slice(-6)
+                );
+            }
+
+            /* deterministic identicon swatch, seeded by the interface hash.
+               FNV-1a string hash → mulberry32 PRNG (32-bit-safe). */
+            function fpSVG(seed) {
+                let h = 2166136261 >>> 0;
+                for (let i = 0; i < seed.length; i++) {
+                    h ^= seed.charCodeAt(i);
+                    h = Math.imul(h, 16777619) >>> 0;
+                }
+                const rnd = () => {
+                    h = (h + 0x6d2b79f5) >>> 0;
+                    let t = h;
+                    t = Math.imul(t ^ (t >>> 15), t | 1) >>> 0;
+                    t = (t + Math.imul(t ^ (t >>> 7), t | 61)) >>> 0;
+                    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+                    return (t ^ (t >>> 14)) >>> 0;
+                };
+                const palette = [
+                    "#3edab2",
+                    "#7092f2",
+                    "#edab4f",
+                    "#9bb3f6",
+                    "#149e7f",
+                    "#d68a3a",
+                ];
+                const i1 = rnd() % palette.length;
+                let i2 = rnd() % palette.length;
+                if (i2 === i1) i2 = (i2 + 1) % palette.length;
+                const c1 = palette[i1];
+                const c2 = palette[i2];
+                let cells = "";
+                for (let y = 0; y < 5; y++) {
+                    for (let x = 0; x < 3; x++) {
+                        const r = rnd();
+                        if (r & 1) {
+                            const col = (r >> 3) & 1 ? c1 : c2;
+                            const rect = (rx) =>
+                                '<rect x="' +
+                                rx * 7 +
+                                '" y="' +
+                                y * 7 +
+                                '" width="7" height="7" fill="' +
+                                col +
+                                '"/>';
+                            cells += rect(x);
+                            if (x < 2) cells += rect(4 - x);
+                        }
+                    }
+                }
+                return (
+                    '<svg class="fp" viewBox="-1 -1 37 37">' + cells + "</svg>"
+                );
+            }
+
+            function plural(n, unit) {
+                return n + " " + unit + (n === 1 ? "" : "s");
+            }
+
+            /* short interface description for the table column */
+            function ifaceLabel(s) {
+                const sum = s.summary || {};
+                const bits = [plural(sum.tool_count || 0, "tool")];
+                if (sum.prompt_count)
+                    bits.push(plural(sum.prompt_count, "prompt"));
+                if (sum.resource_count)
+                    bits.push(plural(sum.resource_count, "resource"));
+                return bits.join(", ");
+            }
+
+            /* registered tools / prompts / resources block in the detail */
+            function setupHTML(s) {
+                const iface = s.interface || [];
+                const byType = (t) => iface.filter((c) => c.type === t);
+
+                const tools = byType("tool")
+                    .map((t) => {
+                        const props =
+                            (t.input_schema && t.input_schema.properties) || {};
+                        const params = Object.keys(props).length
+                            ? ' <span class="muted">(' +
+                              esc(Object.keys(props).join(", ")) +
+                              ")</span>"
+                            : "";
+                        const desc = t.description
+                            ? '<div class="sub2">' +
+                              esc(t.description) +
+                              "</div>"
+                            : "";
+                        return (
+                            '<li><span class="nm">' +
+                            esc(t.name || "tool") +
+                            "</span>" +
+                            params +
+                            desc +
+                            "</li>"
+                        );
+                    })
+                    .join("");
+
+                const extras = byType("prompt")
+                    .map((p) => {
+                        const args = (p.arguments || [])
+                            .map((a) => a.name)
+                            .join(", ");
+                        const params = args
+                            ? ' <span class="muted">(' + esc(args) + ")</span>"
+                            : "";
+                        const desc = p.description
+                            ? '<div class="sub2">' +
+                              esc(p.description) +
+                              "</div>"
+                            : "";
+                        return (
+                            '<li><span class="nm">' +
+                            esc(p.name || "prompt") +
+                            '</span> <span class="muted">· prompt</span>' +
+                            params +
+                            desc +
+                            "</li>"
+                        );
+                    })
+                    .concat(
+                        byType("resource").map((r) => {
+                            const desc = r.description
+                                ? '<div class="sub2">' +
+                                  esc(r.description) +
+                                  "</div>"
+                                : "";
+                            return (
+                                '<li><span class="nm">' +
+                                esc(r.name || r.uri || "resource") +
+                                '</span> <span class="muted">· resource</span>' +
+                                '<div class="sub2">' +
+                                esc(r.uri || "") +
+                                "</div>" +
+                                desc +
+                                "</li>"
+                            );
+                        }),
+                    )
+                    .concat(
+                        byType("server_instructions").map(
+                            (i) =>
+                                '<li><span class="nm">instructions</span>' +
+                                '<div class="sub2">' +
+                                esc(i.instructions || "") +
+                                "</div></li>",
+                        ),
+                    )
+                    .join("");
+
+                return (
+                    '<div class="setup"><div class="setup-head"><span>registered interface · ' +
+                    esc(ifaceLabel(s)) +
+                    "</span>" +
+                    '<span class="vstamp neutral">checking…</span>' +
+                    '</div><div class="setup-body">' +
+                    (tools
+                        ? '<div class="setup-col"><div class="setup-k">tools</div><ul>' +
+                          tools +
+                          "</ul></div>"
+                        : "") +
+                    (extras
+                        ? '<div class="setup-col"><div class="setup-k">prompts &amp; resources</div><ul>' +
+                          extras +
+                          "</ul></div>"
+                        : "") +
+                    "</div></div>"
+                );
+            }
+
+            /* ===== Detail panel ===== */
+            function detailHTML(s) {
+                const cell = (k, v, copyVal) =>
+                    '<div class="dcell"><div class="k">' +
+                    k +
+                    '</div><div class="v">' +
+                    esc(v) +
+                    (copyVal
+                        ? ' <span class="copy" data-copy="' +
+                          esc(copyVal) +
+                          '" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></span>'
+                        : "") +
+                    "</div></div>";
+
+                /* hash-check cell — filled in async by applyVerification() */
+                const checkCell =
+                    '<div class="dcell"><div class="k">interface check</div>' +
+                    '<div class="v crypto checking">checking…</div></div>';
+
+                return (
+                    '<div class="detail" onclick="event.stopPropagation()"><div class="dgrid">' +
+                    cell("server name", s.name, s.name) +
+                    checkCell +
+                    cell("full hash", "sha256:" + s.hash, "sha256:" + s.hash) +
+                    cell("registered at", formatISO(s.registered_at)) +
+                    "</div>" +
+                    setupHTML(s) +
+                    "</div>"
+                );
+            }
+
+            /* ===== Rendering ===== */
+            function renderRows(list, append) {
+                const rows = document.getElementById("rows");
+                const startIdx = append ? rows.children.length : 0;
+                document.getElementById("count").textContent =
+                    totalCount + " " + (totalCount === 1 ? "entry" : "entries");
+
+                if (!list.length && !append) {
+                    rows.innerHTML =
+                        '<div class="empty">No servers registered yet.</div>';
+                    return;
+                }
+
+                const html = list
+                    .map((s, i) => {
+                        const idx = startIdx + i;
+                        return (
+                            '<div class="row" data-i="' +
+                            idx +
+                            '" style="animation-delay:' +
+                            i * 55 +
+                            'ms">' +
+                            fpSVG(s.hash) +
+                            '<div style="min-width:0">' +
+                            '<div class="srv-name">' +
+                            esc(s.name) +
+                            "</div>" +
+                            '<div class="hash-sub">' +
+                            shortenHash(s.hash) +
+                            "</div>" +
+                            "</div>" +
+                            '<div class="iface">' +
+                            esc(ifaceLabel(s)) +
+                            "</div>" +
+                            '<div class="when">' +
+                            esc(relativeTime(s.registered_at)) +
+                            "</div>" +
+                            '<div><span class="badge checking">checking…</span></div>' +
+                            detailHTML(s) +
+                            "</div>"
+                        );
+                    })
+                    .join("");
+
+                if (append) {
+                    rows.insertAdjacentHTML("beforeend", html);
+                } else {
+                    rows.innerHTML = html;
+                }
+
+                /* attach each record to its rendered row, then verify in place */
+                const allRows = rows.querySelectorAll(".row");
+                const newRows = append
+                    ? Array.prototype.slice.call(
+                          allRows,
+                          allRows.length - list.length,
+                      )
+                    : Array.prototype.slice.call(allRows);
+                newRows.forEach((el, i) => {
+                    el._srv = list[i];
+                });
+                verifyVisible(newRows);
+            }
+
+            function updateStats(servers) {
+                document.getElementById("stat-total").textContent =
+                    totalCount.toLocaleString();
+                const names = new Set(servers.map((s) => s.name));
+                document.getElementById("stat-servers").textContent =
+                    names.size.toLocaleString();
+                let tools = 0;
+                let extras = 0;
+                servers.forEach((s) => {
+                    const sum = s.summary || {};
+                    tools += sum.tool_count || 0;
+                    extras +=
+                        (sum.prompt_count || 0) + (sum.resource_count || 0);
+                });
+                document.getElementById("stat-tools").textContent =
+                    tools.toLocaleString();
+                document.getElementById("stat-extras").textContent =
+                    extras.toLocaleString();
+            }
+
+            function updateSample() {
+                const el = document.getElementById("sample");
+                if (allServers.length) {
+                    el.textContent = allServers[0].name;
+                } else {
+                    el.textContent = "no data yet";
+                }
+            }
+
+            function updateLoadMore() {
+                const btn = document.getElementById("load-more");
+                btn.style.display =
+                    currentOffset < totalCount ? "block" : "none";
+            }
+
+            /* ===== Interactions ===== */
+            function bindRows() {
+                document.querySelectorAll(".row").forEach((r) => {
+                    if (r.dataset.bound) return;
+                    r.dataset.bound = "1";
+                    r.addEventListener("click", () => {
+                        const isOpen = r.classList.contains("open");
+                        document
+                            .querySelectorAll(".row.open")
+                            .forEach((o) => o.classList.remove("open"));
+                        if (!isOpen) r.classList.add("open");
+                    });
+                });
+                document.querySelectorAll(".copy").forEach((c) => {
+                    if (c.dataset.bound) return;
+                    c.dataset.bound = "1";
+                    c.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        navigator.clipboard
+                            ?.writeText(c.dataset.copy)
+                            .then(toast)
+                            .catch(toast);
+                    });
+                });
+            }
+
+            let tT;
+            function toast() {
+                const t = document.getElementById("toast");
+                t.classList.add("show");
+                clearTimeout(tT);
+                tT = setTimeout(() => t.classList.remove("show"), 1600);
+            }
+
+            /* ===== API ===== */
+            async function loadRecent(append) {
+                try {
+                    const resp = await fetch(
+                        "servers?limit=" +
+                            PAGE +
+                            "&offset=" +
+                            (append ? currentOffset : 0),
+                    );
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    const data = await resp.json();
+                    totalCount = data.total;
+
+                    if (append) {
+                        allServers = allServers.concat(data.servers);
+                        currentOffset += data.servers.length;
+                        renderRows(data.servers, true);
+                    } else {
+                        allServers = data.servers;
+                        currentOffset = data.servers.length;
+                        renderRows(allServers, false);
+                    }
+
+                    updateStats(allServers);
+                    updateSample();
+                    updateLoadMore();
+                    bindRows();
+                } catch (err) {
+                    const rows = document.getElementById("rows");
+                    if (!append) {
+                        rows.innerHTML =
+                            '<div class="empty">Could not load servers.</div>';
+                    }
+                    console.error("loadRecent:", err);
+                }
+            }
+
+            async function lookupHash(hash) {
+                try {
+                    const resp = await fetch(
+                        "servers/" + encodeURIComponent(hash),
+                    );
+                    if (resp.status === 404) return [];
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    return await resp.json();
+                } catch (err) {
+                    console.error("lookupHash:", err);
+                    return [];
+                }
+            }
+
+            async function lookupName(name) {
+                try {
+                    const resp = await fetch(
+                        "servers?name=" +
+                            encodeURIComponent(name) +
+                            "&limit=100",
+                    );
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    return (await resp.json()).servers;
+                } catch (err) {
+                    console.error("lookupName:", err);
+                    return [];
+                }
+            }
+
+            /* ===== Search / filter ===== */
+            function isHex(s) {
+                return s.length >= 8 && /^[0-9a-f]+$/i.test(s);
+            }
+
+            function clientFilter(q) {
+                if (!q) return allServers;
+                return allServers.filter(
+                    (s) =>
+                        s.name.toLowerCase().includes(q) ||
+                        s.hash.toLowerCase().includes(q) ||
+                        ((s.summary && s.summary.tools) || []).some((t) =>
+                            t.toLowerCase().includes(q),
+                        ),
+                );
+            }
+
+            async function doSearch(openFirst) {
+                const raw = document
+                    .getElementById("q")
+                    .value.trim()
+                    .toLowerCase()
+                    .replace(/^(sha256|mcp):/, "");
+                if (!raw) {
+                    /* reset to full list */
+                    totalCount = allServers.length || totalCount;
+                    renderRows(allServers, false);
+                    updateLoadMore();
+                    bindRows();
+                    return;
+                }
+
+                let results;
+                if (isHex(raw)) {
+                    /* try exact server lookup first, then fall back to client filter */
+                    const serverResults = await lookupHash(raw);
+                    results = serverResults.length
+                        ? serverResults
+                        : clientFilter(raw);
+                } else {
+                    results = clientFilter(raw);
+                    if (!results.length) {
+                        results = await lookupName(raw);
+                    }
+                }
+
+                const prevTotal = totalCount;
+                totalCount = results.length;
+                renderRows(results, false);
+                totalCount = prevTotal; /* restore real total */
+                document.getElementById("count").textContent =
+                    results.length +
+                    " " +
+                    (results.length === 1 ? "match" : "matches");
+                document.getElementById("load-more").style.display = "none";
+                bindRows();
+
+                if (openFirst && results.length) {
+                    const first = document.querySelector(".row");
+                    if (first) {
+                        first.classList.add("open");
+                        first.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                        });
+                    }
+                }
+            }
+
+            /* ===== Init ===== */
+            const qEl = document.getElementById("q");
+            qEl.addEventListener("input", () => doSearch(false));
+            qEl.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") doSearch(true);
+            });
+
+            document
+                .getElementById("lookup")
+                .addEventListener("click", () => doSearch(true));
+
+            document.getElementById("sample").addEventListener("click", () => {
+                if (!allServers.length) return;
+                qEl.value = allServers[0].name;
+                doSearch(true);
+            });
+
+            document
+                .getElementById("load-more")
+                .addEventListener("click", () => {
+                    loadRecent(true);
+                });
+
+            /* initial load */
+            loadRecent(false);
+        </script>
+    </body>
+</html>

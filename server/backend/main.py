@@ -10,10 +10,11 @@ or ``kiji-safeguard serve``.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 
 from kiji_safeguard.signer import aggregate_hash
 
@@ -89,43 +90,9 @@ def list_servers(
     return ServerListResponse(servers=[_to_response(r) for r in records], total=total)
 
 
-_INDEX_HTML = """<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>kiji-safeguard registry</title>
-<style>
-  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; }
-  h1 { font-size: 1.4rem; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { border-bottom: 1px solid #ddd; padding: .5rem; text-align: left; }
-  code { font-size: .85em; word-break: break-all; }
-</style>
-</head>
-<body>
-<h1>kiji-safeguard registry</h1>
-<p>Registered MCP server interfaces (most recent first).</p>
-<table>
-  <thead><tr><th>Name</th><th>Hash</th><th>Tools</th><th>Registered</th></tr></thead>
-  <tbody id="rows"></tbody>
-</table>
-<script>
-fetch("servers?limit=100").then(r => r.json()).then(data => {
-  const rows = document.getElementById("rows");
-  for (const s of data.servers) {
-    const tr = document.createElement("tr");
-    const tools = s.summary.tools.join(", ");
-    tr.innerHTML = `<td>${s.name}</td><td><code>${s.hash}</code></td>` +
-                   `<td>${tools}</td><td>${s.registered_at}</td>`;
-    rows.appendChild(tr);
-  }
-});
-</script>
-</body>
-</html>
-"""
+_FRONTEND_INDEX = Path(__file__).resolve().parent.parent / "frontend" / "index.html"
 
 
 @app.get("/", include_in_schema=False)
-def index() -> HTMLResponse:
-    return HTMLResponse(_INDEX_HTML)
+def index() -> FileResponse:
+    return FileResponse(_FRONTEND_INDEX)

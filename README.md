@@ -115,7 +115,7 @@ from "same interface registered under a different name".
 | `POST /servers` | Register `{name, hash, interface}`. Rejects submissions whose hash doesn't match the interface (400). Idempotent per `(name, hash)`. |
 | `GET /servers/{hash}` | All registrations for an interface hash (404 if none). |
 | `GET /servers?name=&limit=&offset=` | Recent registrations, optionally filtered by name. |
-| `GET /` | Minimal web UI listing registered servers. |
+| `GET /` | Web UI: browse, search by name or hash, and inspect registered interfaces. |
 
 Storage is SQLite (`KIJI_SAFEGUARD_DB`, default `kiji_safeguard_registry.db`).
 
@@ -126,10 +126,13 @@ kiji_safeguard/        # client library (stdlib-only, no dependencies)
 ├── signer.py          # interface extraction, hashing, register/verify
 ├── autosign.py        # the magic import hook
 └── cli.py             # hash / register / verify / serve
-server/backend/        # FastAPI registry (mirrors agent-signing's layout)
-├── main.py            # endpoints + web UI
-├── models.py          # pydantic models
-└── database.py        # SQLite persistence
+server/                # registry service (mirrors agent-signing's layout)
+├── backend/
+│   ├── main.py        # FastAPI endpoints
+│   ├── models.py      # pydantic models
+│   └── database.py    # SQLite persistence
+└── frontend/
+    └── index.html     # web UI (shares agent-signing's registry design)
 examples/              # demo project whose MCP servers use the magic import
 tests/                 # pytest suite (incl. live-registry round trips)
 ```

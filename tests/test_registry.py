@@ -76,4 +76,5 @@ def test_list_servers_filters_by_name(client):
 def test_index_page(client):
     response = client.get("/")
     assert response.status_code == 200
-    assert "kiji-safeguard registry" in response.text
+    assert "Kiji Safeguard" in response.text
+    assert "MCP Registry" in response.text
