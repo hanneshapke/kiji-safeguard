@@ -10,6 +10,7 @@ over stdin/stdout, so it never needs to run on its own port.
 
 from __future__ import annotations
 
+import kiji_safeguard.autosign  # noqa: F401  - registers/verifies this server's interface on run
 import yfinance as yf
 from mcp.server.fastmcp import FastMCP
 

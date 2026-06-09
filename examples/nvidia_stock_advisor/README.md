@@ -65,6 +65,29 @@ nvidia_stock_advisor/
 └── .env                          # your OPENAI_API_KEY (gitignored)
 ```
 
+## MCP server signing (kiji-safeguard)
+
+Both MCP servers carry the magic one-liner
+
+```python
+import kiji_safeguard.autosign  # noqa: F401
+```
+
+so every `mcp.run()` checks the server's interface hash against the
+[kiji-safeguard registry](../../README.md). To try it:
+
+```bash
+# from the repo root, in another terminal
+uv run --extra server kiji-safeguard serve --port 8000
+
+# register both servers once
+KIJI_SAFEGUARD_MODE=register uv run main.py
+```
+
+Subsequent runs verify automatically and warn on stderr if a tool, schema or
+description changed. Set `KIJI_SAFEGUARD_ENFORCE=1` to refuse startup instead,
+or `KIJI_SAFEGUARD_MODE=off` to disable.
+
 ## Notes
 
 - **Not financial advice.** This is a demo of agent + MCP orchestration; the
