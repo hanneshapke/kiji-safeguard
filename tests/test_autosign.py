@@ -68,6 +68,34 @@ def test_on_run_verifies_registered_server(live_registry, monkeypatch, capsys):
     assert "verified 'demo-server'" in capsys.readouterr().err
 
 
+def test_on_run_auto_mode_registers_on_first_sight(live_registry, monkeypatch, capsys):
+    monkeypatch.delenv("KIJI_SAFEGUARD_MODE", raising=False)
+    monkeypatch.setenv("KIJI_SAFEGUARD_REGISTRY", live_registry)
+
+    server = make_server()
+    autosign._on_run(server)
+    assert "first sight of 'demo-server'" in capsys.readouterr().err
+
+    autosign._on_run(server)
+    assert "verified 'demo-server'" in capsys.readouterr().err
+
+
+def test_on_run_auto_mode_never_reregisters_changed_interface(
+    live_registry, monkeypatch, capsys
+):
+    monkeypatch.delenv("KIJI_SAFEGUARD_MODE", raising=False)
+    monkeypatch.setenv("KIJI_SAFEGUARD_REGISTRY", live_registry)
+    MCPSigner.from_server(make_server()).register(live_registry)
+
+    autosign._on_run(make_server(extra_tool=True))
+    err = capsys.readouterr().err
+    assert "WARNING" in err and "interface changed" in err
+
+    # The changed interface must still fail verification (it was not adopted).
+    result = MCPSigner.from_server(make_server(extra_tool=True)).verify(live_registry)
+    assert not result
+
+
 def test_on_run_warns_on_changed_interface(live_registry, monkeypatch, capsys):
     MCPSigner.from_server(make_server()).register(live_registry)
 

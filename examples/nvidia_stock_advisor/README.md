@@ -80,13 +80,19 @@ so every `mcp.run()` checks the server's interface hash against the
 # from the repo root, in another terminal
 uv run --extra server kiji-safeguard serve --port 8000
 
-# register both servers once
-KIJI_SAFEGUARD_MODE=register uv run main.py
+# then run the demo as usual
+uv run main.py
 ```
 
-Subsequent runs verify automatically and warn on stderr if a tool, schema or
-description changed. Set `KIJI_SAFEGUARD_ENFORCE=1` to refuse startup instead,
-or `KIJI_SAFEGUARD_MODE=off` to disable.
+On the first run both servers register themselves (trust-on-first-use);
+they show up at <http://127.0.0.1:8000/>. Subsequent runs verify
+automatically and warn on stderr if a tool, schema or description changed
+(note: the warning is printed by the MCP server *subprocesses*, so
+depending on the adapter it may not surface in the crew's console — the
+registry UI is the reliable place to check). Set `KIJI_SAFEGUARD_ENFORCE=1`
+to refuse startup on a mismatch instead, `KIJI_SAFEGUARD_MODE=verify` to
+disable auto-registration, or `KIJI_SAFEGUARD_MODE=off` to disable
+entirely.
 
 ## Notes
 

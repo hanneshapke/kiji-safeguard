@@ -73,22 +73,25 @@ def test_verify_detects_interface_change(live_registry):
     tampered = MCPSigner.from_server(make_server(extra_tool=True))
     result = tampered.verify(live_registry)
     assert not result
+    assert result.code == "changed"
     assert "interface changed" in result.reason
 
 
 def test_verify_unregistered_server(live_registry):
     result = MCPSigner.from_server(make_server(name="ghost")).verify(live_registry)
     assert not result
+    assert result.code == "unregistered"
     assert "not registered" in result.reason
 
 
-def test_verify_detects_name_mismatch(live_registry):
+def test_verify_unregistered_name_mentions_other_names(live_registry):
     MCPSigner.from_server(make_server()).register(live_registry)
 
     impostor = MCPSigner.from_server(make_server(), name="impostor")
     result = impostor.verify(live_registry)
     assert not result
-    assert "different name" in result.reason
+    assert result.code == "unregistered"
+    assert "registered under: demo-server" in result.reason
 
 
 def test_verify_unreachable_registry():

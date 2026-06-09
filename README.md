@@ -28,9 +28,12 @@ import kiji_safeguard.autosign  # noqa: F401
 That's it. An import hook patches `FastMCP.run()` the moment
 `mcp.server.fastmcp` is imported (or in place, if it already was). Every time
 the server starts, its interface is extracted, hashed and checked against the
-registry — with zero further code changes:
+registry — with zero further code changes. The first run registers the server
+(trust-on-first-use), every later run verifies it:
 
 ```text
+$ python weather_server.py
+[kiji-safeguard] first sight of 'weather' — registered with hash 4c469eb41474f6eb… at http://127.0.0.1:8000
 $ python weather_server.py
 [kiji-safeguard] verified 'weather' (hash 4c469eb41474f6eb…)
 ```
@@ -47,7 +50,7 @@ stage of the lifecycle:
 
 | Variable | Values | Default | Meaning |
 | --- | --- | --- | --- |
-| `KIJI_SAFEGUARD_MODE` | `verify` / `register` / `off` | `verify` | Check against the registry, publish to it, or do nothing |
+| `KIJI_SAFEGUARD_MODE` | `auto` / `verify` / `register` / `off` | `auto` | `auto` verifies and registers unknown servers on first sight (a *changed* interface is only flagged, never re-registered); `verify` never registers; `register` always publishes; `off` disables |
 | `KIJI_SAFEGUARD_REGISTRY` | URL | `http://127.0.0.1:8000` | Registry base URL |
 | `KIJI_SAFEGUARD_ENFORCE` | `1`/`true`/… | unset | Abort startup on failure instead of warning |
 
@@ -71,9 +74,9 @@ kiji-safeguard verify mcp_servers/stock_price_server.py
 Or with the magic import instead of the CLI:
 
 ```bash
-KIJI_SAFEGUARD_MODE=register python my_server.py   # first run: publish
-python my_server.py                                # every run after: verify
-KIJI_SAFEGUARD_ENFORCE=1 python my_server.py       # production: refuse to start on mismatch
+python my_server.py                            # first run registers, later runs verify
+KIJI_SAFEGUARD_ENFORCE=1 python my_server.py   # production: refuse to start on mismatch
+KIJI_SAFEGUARD_MODE=verify python my_server.py # strict: never auto-register
 ```
 
 ## Programmatic API

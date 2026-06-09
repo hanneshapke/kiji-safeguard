@@ -9,8 +9,11 @@ interface (tool names, descriptions, schemas, ...), hashes it and talks to
 the registry.  Behaviour is controlled by environment variables:
 
 ``KIJI_SAFEGUARD_MODE``
-    ``verify`` (default) checks the live interface against the registry,
-    ``register`` publishes it, ``off`` disables the hook.
+    ``auto`` (default) verifies the live interface against the registry and
+    registers it on first sight (trust-on-first-use); a *changed* interface
+    is never re-registered, only flagged.  ``verify`` checks strictly
+    without ever registering, ``register`` always publishes, ``off``
+    disables the hook.
 ``KIJI_SAFEGUARD_REGISTRY``
     Registry base URL, default ``http://127.0.0.1:8000``.
 ``KIJI_SAFEGUARD_ENFORCE``
@@ -41,7 +44,7 @@ class SafeguardError(RuntimeError):
 
 
 def _mode() -> str:
-    return os.environ.get("KIJI_SAFEGUARD_MODE", "verify").strip().lower()
+    return os.environ.get("KIJI_SAFEGUARD_MODE", "auto").strip().lower()
 
 
 def _registry_url() -> str:
@@ -96,6 +99,16 @@ def _on_run(server: Any) -> None:
         return
     if result:
         _note(f"verified {signer.name!r} (hash {signer.hash})")
+    elif mode == "auto" and result.code == "unregistered":
+        try:
+            signer.register(registry)
+        except (ConnectionError, ValueError) as exc:
+            _fail(f"registration of {signer.name!r} failed: {exc}")
+        else:
+            _note(
+                f"first sight of {signer.name!r} — registered with hash "
+                f"{signer.hash} at {registry}"
+            )
     else:
         _fail(f"verification of {signer.name!r} failed: {result.reason}")
 

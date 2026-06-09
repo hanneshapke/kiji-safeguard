@@ -112,11 +112,17 @@ def extract_interface(server: Any) -> list[dict[str, Any]]:
 
 @dataclass
 class VerificationResult:
-    """Outcome of a registry lookup for a server's current interface."""
+    """Outcome of a registry lookup for a server's current interface.
+
+    ``code`` is one of ``"ok"``, ``"changed"`` (name registered with a
+    different hash), ``"unregistered"`` (name unknown to the registry) or
+    ``"error"`` (lookup failed).
+    """
 
     valid: bool
     reason: str
     record: dict[str, Any] | None = None
+    code: str = "error"
 
     def __bool__(self) -> bool:
         return self.valid
@@ -164,10 +170,13 @@ class MCPSigner:
 
         Valid only when the recomputed hash is registered under this
         server's name.  When the name is registered with a different hash
-        the interface has changed since registration.
+        the interface has changed since registration (``code="changed"``);
+        when the name is unknown the server was never registered
+        (``code="unregistered"``).
         """
         base = registry_url.rstrip("/")
         status, body = _http_json("GET", f"{base}/servers/{self.hash}", timeout=timeout)
+        records: list[dict[str, Any]] = []
         if status == 200:
             records = body if isinstance(body, list) else [body]
             for record in records:
@@ -176,21 +185,16 @@ class MCPSigner:
                         valid=True,
                         reason="interface hash matches registered record",
                         record=record,
+                        code="ok",
                     )
-            other_names = sorted({str(record.get("name")) for record in records})
+        elif status != 404:
             return VerificationResult(
                 valid=False,
-                reason=(
-                    "interface hash is registered, but under different "
-                    f"name(s): {', '.join(other_names)}"
-                ),
+                reason=f"registry lookup failed ({status}): {body}",
+                code="error",
             )
 
-        if status != 404:
-            return VerificationResult(
-                valid=False, reason=f"registry lookup failed ({status}): {body}"
-            )
-
+        # The hash is not registered under this name; is the name known at all?
         query = urllib.parse.urlencode({"name": self.name})
         status, body = _http_json("GET", f"{base}/servers?{query}", timeout=timeout)
         if status == 200 and isinstance(body, dict) and body.get("servers"):
@@ -203,9 +207,19 @@ class MCPSigner:
                     f"to {self.hash}"
                 ),
                 record=registered,
+                code="changed",
             )
+
+        other_names = sorted({str(record.get("name")) for record in records})
+        suffix = (
+            f" (the same interface is registered under: {', '.join(other_names)})"
+            if other_names
+            else ""
+        )
         return VerificationResult(
-            valid=False, reason=f"server {self.name!r} is not registered"
+            valid=False,
+            reason=f"server {self.name!r} is not registered{suffix}",
+            code="unregistered",
         )
 
 
