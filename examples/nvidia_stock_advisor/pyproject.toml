@@ -1,0 +1,16 @@
+[project]
+name = "nvidia-stock-advisor"
+version = "0.1.0"
+description = "CrewAI demo agent that uses MCP servers for stock prices + news and recommends purchases."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai>=0.130.0",
+    "crewai-tools[mcp]>=0.47.0",
+    "mcp>=1.6.0",
+    "yfinance>=0.2.50",
+    "python-dotenv>=1.0.1",
+]
+
+[tool.uv]
+package = false
