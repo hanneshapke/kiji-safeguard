@@ -1,0 +1,44 @@
+[project]
+name = "kiji-safeguard"
+version = "0.1.1"
+description = "Sign and verify MCP server interfaces. Detects when tools, schemas or descriptions change."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+]
+dev = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "mcp>=1.6.0",
+    "pytest>=8.0",
+]
+
+[project.scripts]
+kiji-safeguard = "kiji_safeguard.cli:main"
+
+# uv installs the default dependency group automatically, so a plain
+# `uv run kiji-safeguard serve` from the repo root has the registry deps.
+[dependency-groups]
+dev = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
+    "mcp>=1.6.0",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["kiji_safeguard", "server", "server.backend", "server.frontend"]
+
+[tool.setuptools.package-data]
+"server.frontend" = ["*.html"]
