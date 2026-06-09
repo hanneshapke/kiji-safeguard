@@ -12,18 +12,50 @@ data, and prints a buy/hold/avoid recommendation.
 
 from __future__ import annotations
 
+import json
+import os
 import sys
+import urllib.parse
+import urllib.request
 
 from dotenv import load_dotenv
 from crewai_tools import MCPServerAdapter
 
 from crew import build_crew, server_params
 
+SAFEGUARD_REGISTRY = os.environ.get("KIJI_SAFEGUARD_REGISTRY", "http://127.0.0.1:8000")
+MCP_SERVER_NAMES = ("stock-prices", "stock-news")
+
+
+def print_safeguard_status() -> None:
+    """Show what the kiji-safeguard registry knows about our MCP servers.
+
+    The servers register/verify themselves when they start (via the
+    ``kiji_safeguard.autosign`` import in ``mcp_servers/*.py``), but their
+    stderr is not always surfaced by the adapter — so ask the registry
+    directly and report in this process, where the output is visible.
+    """
+    print("kiji-safeguard registry status:")
+    for name in MCP_SERVER_NAMES:
+        url = (
+            f"{SAFEGUARD_REGISTRY}/servers?"
+            + urllib.parse.urlencode({"name": name, "limit": 1})
+        )
+        try:
+            with urllib.request.urlopen(url, timeout=3) as response:
+                servers = json.load(response)["servers"]
+        except (OSError, ValueError, KeyError):
+            print(f"  {name}: registry not reachable at {SAFEGUARD_REGISTRY}")
+            continue
+        if servers:
+            print(f"  {name}: registered (hash {servers[0]['hash'][:16]}…)")
+        else:
+            print(f"  {name}: NOT registered")
+    print()
+
 
 def main() -> None:
     load_dotenv()
-
-    import os
 
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit(
@@ -39,6 +71,7 @@ def main() -> None:
     # up when the crew finishes.
     with MCPServerAdapter(server_params()) as tools:
         print(f"Connected to MCP servers. Available tools: {[t.name for t in tools]}\n")
+        print_safeguard_status()
         crew = build_crew(tools, ticker=ticker)
         result = crew.kickoff()
 
