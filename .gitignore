@@ -1,11 +1,64 @@
+# ---- Secrets / environment ----
+.env
+.env.*
+!.env.example
+
+# ---- Python ----
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+sdist/
+wheels/
 *.egg-info/
+*.egg
+.installed.cfg
+MANIFEST
+
+# ---- Virtual environments ----
 .venv/
 venv/
-dist/
-build/
-.pytest_cache/
-*.db
-.env
+env/
+ENV/
+
+# ---- uv ----
 uv.lock
+
+# ---- Testing / coverage / type checkers ----
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.dmypy.json
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- Logs ----
+*.log
+
+# ---- Local databases ----
+kiji_safeguard_registry.db
+
+# ---- IDE / editor ----
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
