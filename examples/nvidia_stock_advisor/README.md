@@ -51,6 +51,12 @@ then launches `main.py`. `MCPServerAdapter` starts the two MCP servers as
 subprocesses (using the same interpreter), aggregates their tools, and hands
 them to the researcher agent.
 
+> **Note:** the demo's `.env` enables the kiji-safeguard check with
+> `KIJI_SAFEGUARD_ENFORCE=1`, so the MCP servers refuse to start unless the
+> registry is running. Start it first (see
+> [MCP server signing](#mcp-server-signing-kiji-safeguard)) or set
+> `KIJI_SAFEGUARD_ENFORCE=0` / `KIJI_SAFEGUARD_MODE=off` to skip it.
+
 ## Files
 
 ```
@@ -73,26 +79,57 @@ Both MCP servers carry the magic one-liner
 import kiji_safeguard.autosign  # noqa: F401
 ```
 
-so every `mcp.run()` checks the server's interface hash against the
-[kiji-safeguard registry](../../README.md). To try it:
+so every `mcp.run()` extracts the server's interface — tool names, descriptions,
+and **both input and output schemas** — hashes it, and checks it against the
+[kiji-safeguard registry](../../README.md). The demo's `.env` turns this on by
+default:
+
+```dotenv
+KIJI_SAFEGUARD_REGISTRY=http://127.0.0.1:8000
+KIJI_SAFEGUARD_ENFORCE=1   # a mismatch makes the server refuse to start → the crew aborts
+```
+
+Because `ENFORCE=1` aborts on any problem (mismatch **or** unreachable registry),
+**start the registry before launching the demo**:
 
 ```bash
-# from the repo root, in another terminal
+# terminal 1 — from the repo root
 uv run --extra server kiji-safeguard serve --port 8000
 
-# then run the demo as usual
+# terminal 2 — from this directory
 uv run main.py
 ```
 
-On the first run both servers register themselves (trust-on-first-use);
-they show up at <http://127.0.0.1:8000/>. Subsequent runs verify
-automatically and warn on stderr if a tool, schema or description changed
-(note: the warning is printed by the MCP server *subprocesses*, so
-depending on the adapter it may not surface in the crew's console — the
-registry UI is the reliable place to check). Set `KIJI_SAFEGUARD_ENFORCE=1`
-to refuse startup on a mismatch instead, `KIJI_SAFEGUARD_MODE=verify` to
-disable auto-registration, or `KIJI_SAFEGUARD_MODE=off` to disable
-entirely.
+The first run registers both servers (trust-on-first-use); they appear at
+<http://127.0.0.1:8000/>. Every later run verifies them, and `main.py` prints
+each server's registry status in its own console (the servers' stderr is not
+reliably surfaced through the adapter). To run without the safeguard, set
+`KIJI_SAFEGUARD_ENFORCE=0` (warn only) or `KIJI_SAFEGUARD_MODE=off` (disable) in
+`.env`.
+
+### Reproduce a tampered interface
+
+1. Start the registry and run the demo once so both servers register.
+2. Change a tool in `mcp_servers/` — rename it, edit its docstring, alter a
+   parameter, **or change its return type** (e.g. `-> str` → `-> tuple[str, str]`,
+   which the output-schema hash now catches).
+3. Run again. The changed server's hash no longer matches its registration, so
+   with `KIJI_SAFEGUARD_ENFORCE=1` it refuses to start and the crew aborts:
+
+   ```text
+   verification of 'stock-news' failed: interface changed: 'stock-news' is
+   registered with hash …, but the live interface hashes to …
+   ```
+
+### Reset the registry
+
+The signed interface includes output schemas, so registrations are tied to that
+hashing scheme. After a kiji-safeguard upgrade (or to clear a stale baseline),
+wipe the registry and let the next run re-register from scratch:
+
+```bash
+rm kiji_safeguard_registry.db   # at the repo root; recreated on the next `serve`
+```
 
 ## Notes
 

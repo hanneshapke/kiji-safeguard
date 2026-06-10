@@ -708,6 +708,25 @@
                 margin-top: 2px;
                 word-break: break-word;
             }
+            .setup .doc-sec {
+                margin-top: 8px;
+            }
+            .setup .doc-h {
+                color: var(--text-dim);
+                font-size: 11px;
+                margin-bottom: 3px;
+            }
+            .setup .doc-item {
+                color: var(--text-faint);
+                font-size: 11px;
+                padding-left: 13px;
+                text-indent: -9px;
+                word-break: break-word;
+            }
+            .setup .doc-item .rk,
+            .setup .doc-item .sig {
+                color: var(--text-dim);
+            }
             .vstamp {
                 font-family: var(--mono);
                 font-size: 10.5px;
@@ -875,7 +894,8 @@
                 </h1>
                 <p class="sub">
                     Look up a server by name or interface hash to inspect its
-                    registered tools, schemas, and descriptions &mdash; and
+                    registered tools, input/output schemas, and descriptions
+                    &mdash; and
                     detect when any of them change.
                 </p>
 
@@ -1221,6 +1241,172 @@
                 return bits.join(", ");
             }
 
+            /* compact type signature from a JSON schema, e.g.
+               "{ result: string }" or "[string, string]" */
+            function typeSig(schema) {
+                if (!schema || typeof schema !== "object") return "any";
+                if (Array.isArray(schema.prefixItems))
+                    return (
+                        "[" + schema.prefixItems.map(typeSig).join(", ") + "]"
+                    );
+                if (schema.type === "array")
+                    return "[" + typeSig(schema.items) + "]";
+                if (Array.isArray(schema.anyOf))
+                    return schema.anyOf.map(typeSig).join(" | ");
+                if (schema.properties && typeof schema.properties === "object") {
+                    const keys = Object.keys(schema.properties);
+                    if (!keys.length) return "{}";
+                    return (
+                        "{ " +
+                        keys
+                            .map(
+                                (k) =>
+                                    esc(k) +
+                                    ": " +
+                                    typeSig(schema.properties[k]),
+                            )
+                            .join(", ") +
+                        " }"
+                    );
+                }
+                if (Array.isArray(schema.type))
+                    return esc(schema.type.join(" | "));
+                return esc(schema.type || "any");
+            }
+
+            /* tidy a Python-style docstring: dedent the body, drop blank ends */
+            function cleandoc(text) {
+                const lines = text.replace(/\t/g, "    ").split("\n");
+                let margin = Infinity;
+                for (let i = 1; i < lines.length; i++) {
+                    const s = lines[i].replace(/^\s+/, "");
+                    if (s)
+                        margin = Math.min(
+                            margin,
+                            lines[i].length - s.length,
+                        );
+                }
+                const out = [(lines[0] || "").replace(/^\s+/, "")];
+                for (let i = 1; i < lines.length; i++)
+                    out.push(
+                        margin === Infinity ? lines[i] : lines[i].slice(margin),
+                    );
+                while (out.length && !out[0].trim()) out.shift();
+                while (out.length && !out[out.length - 1].trim()) out.pop();
+                return out;
+            }
+
+            /* render a description as a summary paragraph plus a bulleted
+               "Args:" list, parsed from a Google-style docstring */
+            function descHTML(desc) {
+                if (!desc || !desc.trim()) return "";
+                const lines = cleandoc(desc);
+                const isHead = (l) => /^[A-Za-z][A-Za-z ]*:\s*$/.test(l.trim());
+                const headName = (l) =>
+                    l.trim().replace(/:\s*$/, "").toLowerCase();
+
+                const summary = [];
+                const args = [];
+                const rest = [];
+                let mode = "summary";
+                let cur = null;
+
+                for (let i = 0; i < lines.length; i++) {
+                    const raw = lines[i];
+                    const l = raw.trim();
+                    if (isHead(raw)) {
+                        const h = headName(raw);
+                        if (["args", "arguments", "parameters"].includes(h))
+                            mode = "args";
+                        else if (["returns", "return", "yields"].includes(h))
+                            mode = "skip"; // Returns comes from the schema
+                        else {
+                            mode = "rest";
+                            rest.push(raw);
+                        }
+                        cur = null;
+                        continue;
+                    }
+                    if (mode === "summary") summary.push(raw);
+                    else if (mode === "args") {
+                        if (!l) continue;
+                        const m = l.match(
+                            /^([A-Za-z_][\w-]*)\s*(?:\([^)]*\))?\s*:\s*(.*)$/,
+                        );
+                        if (m) {
+                            cur = { name: m[1], desc: m[2] };
+                            args.push(cur);
+                        } else if (cur) cur.desc += " " + l;
+                        else rest.push(raw);
+                    } else if (mode === "rest") rest.push(raw);
+                }
+
+                let html = "";
+                const sumText = summary.join("\n").trim();
+                if (sumText)
+                    sumText.split(/\n\s*\n/).forEach((p) => {
+                        html +=
+                            '<div class="sub2">' +
+                            esc(p.replace(/\s*\n\s*/g, " ")) +
+                            "</div>";
+                    });
+                if (args.length)
+                    html +=
+                        '<div class="doc-sec"><div class="doc-h">Args:</div>' +
+                        args
+                            .map(
+                                (a) =>
+                                    '<div class="doc-item">&bull; <span class="rk">' +
+                                    esc(a.name) +
+                                    "</span>: " +
+                                    esc(a.desc.trim()) +
+                                    "</div>",
+                            )
+                            .join("") +
+                        "</div>";
+                const restText = rest.join("\n").trim();
+                if (restText)
+                    html +=
+                        '<div class="doc-sec"><div class="sub2" style="white-space: pre-wrap">' +
+                        esc(restText) +
+                        "</div></div>";
+                return html;
+            }
+
+            /* render an output schema as a bulleted "Returns:" list */
+            function returnsHTML(schema) {
+                if (!schema || typeof schema !== "object") return "";
+                const props =
+                    schema.properties && typeof schema.properties === "object"
+                        ? schema.properties
+                        : null;
+                let items;
+                if (props && Object.keys(props).length)
+                    items = Object.keys(props)
+                        .map(
+                            (k) =>
+                                '<div class="doc-item">&bull; <span class="rk">' +
+                                esc(k) +
+                                '</span>: <span class="sig">' +
+                                typeSig(props[k]) +
+                                "</span></div>",
+                        )
+                        .join("");
+                else {
+                    const sig = typeSig(schema);
+                    if (sig === "any") return "";
+                    items =
+                        '<div class="doc-item">&bull; <span class="sig">' +
+                        sig +
+                        "</span></div>";
+                }
+                return (
+                    '<div class="doc-sec"><div class="doc-h">Returns:</div>' +
+                    items +
+                    "</div>"
+                );
+            }
+
             /* registered tools / prompts / resources block in the detail */
             function setupHTML(s) {
                 const iface = s.interface || [];
@@ -1235,17 +1421,15 @@
                               esc(Object.keys(props).join(", ")) +
                               ")</span>"
                             : "";
-                        const desc = t.description
-                            ? '<div class="sub2">' +
-                              esc(t.description) +
-                              "</div>"
-                            : "";
+                        const desc = descHTML(t.description);
+                        const out = returnsHTML(t.output_schema);
                         return (
                             '<li><span class="nm">' +
                             esc(t.name || "tool") +
                             "</span>" +
                             params +
                             desc +
+                            out +
                             "</li>"
                         );
                     })
