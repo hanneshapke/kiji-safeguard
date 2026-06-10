@@ -1396,17 +1396,24 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
 
             const HEX = "0123456789abcdef";
             function fakeHash(str) {
-                // small deterministic display hash (FNV-ish), purely cosmetic
+                // small deterministic display hash (FNV-ish), purely cosmetic.
+                // Math.imul keeps the mixing in true 32-bit integer math —
+                // plain `*` overflows past 2^53 and the low bits collapse to 0.
                 let h1 = 0x811c9dc5,
                     h2 = 0x01000193;
                 for (let i = 0; i < str.length; i++) {
-                    h1 = ((h1 ^ str.charCodeAt(i)) * 16777619) >>> 0;
-                    h2 = (h2 + str.charCodeAt(i) * (i + 7)) >>> 0;
+                    h1 = Math.imul(h1 ^ str.charCodeAt(i), 16777619);
+                    h2 = Math.imul(h2 + str.charCodeAt(i), i + 7);
                 }
                 let out = "";
-                let seed = h1 ^ h2;
+                // xorshift32 — well-distributed across every bit, so the
+                // low nibble we sample below looks convincingly random.
+                let seed = (h1 ^ h2) >>> 0 || 0x9e3779b9;
                 for (let i = 0; i < 32; i++) {
-                    seed = (seed * 1103515245 + 12345) >>> 0;
+                    seed ^= seed << 13;
+                    seed ^= seed >>> 17;
+                    seed ^= seed << 5;
+                    seed >>>= 0;
                     out += HEX[seed & 15];
                 }
                 return out;
