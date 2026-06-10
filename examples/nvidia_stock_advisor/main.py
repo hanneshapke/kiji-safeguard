@@ -23,7 +23,6 @@ from crewai_tools import MCPServerAdapter
 
 from crew import build_crew, server_params
 
-SAFEGUARD_REGISTRY = os.environ.get("KIJI_SAFEGUARD_REGISTRY", "http://127.0.0.1:8000")
 MCP_SERVER_NAMES = ("stock-prices", "stock-news")
 
 
@@ -35,17 +34,20 @@ def print_safeguard_status() -> None:
     stderr is not always surfaced by the adapter — so ask the registry
     directly and report in this process, where the output is visible.
     """
+    # Read here (not at import) so the value loaded from .env by load_dotenv()
+    # is honored — and matches the registry the server subprocesses use.
+    registry = os.environ.get("KIJI_SAFEGUARD_REGISTRY", "http://127.0.0.1:8000")
     print("kiji-safeguard registry status:")
     for name in MCP_SERVER_NAMES:
         url = (
-            f"{SAFEGUARD_REGISTRY}/servers?"
+            f"{registry}/servers?"
             + urllib.parse.urlencode({"name": name, "limit": 1})
         )
         try:
             with urllib.request.urlopen(url, timeout=3) as response:
                 servers = json.load(response)["servers"]
         except (OSError, ValueError, KeyError):
-            print(f"  {name}: registry not reachable at {SAFEGUARD_REGISTRY}")
+            print(f"  {name}: registry not reachable at {registry}")
             continue
         if servers:
             print(f"  {name}: registered (hash {servers[0]['hash'][:16]}…)")

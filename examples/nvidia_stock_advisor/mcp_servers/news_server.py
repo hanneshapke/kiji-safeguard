@@ -10,9 +10,10 @@ over stdin/stdout.
 
 from __future__ import annotations
 
-import kiji_safeguard.autosign  # noqa: F401  - registers/verifies this server's interface on run
 import yfinance as yf
 from mcp.server.fastmcp import FastMCP
+
+import kiji_safeguard.autosign  # noqa: F401  - registers/verifies this server's interface on run
 
 mcp = FastMCP("stock-news")
 
@@ -30,7 +31,9 @@ def _extract(item: dict) -> dict:
         return {
             "title": content.get("title", ""),
             "summary": content.get("summary") or content.get("description", ""),
-            "publisher": provider.get("displayName", "") if isinstance(provider, dict) else "",
+            "publisher": provider.get("displayName", "")
+            if isinstance(provider, dict)
+            else "",
             "published": content.get("pubDate") or content.get("displayTime", ""),
             "url": url,
         }

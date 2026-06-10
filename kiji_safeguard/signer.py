@@ -62,14 +62,21 @@ def extract_interface(server: Any) -> list[dict[str, Any]]:
 
     components: list[dict[str, Any]] = []
     for tool in tool_manager.list_tools():
-        components.append(
-            {
-                "type": "tool",
-                "name": tool.name,
-                "description": tool.description or "",
-                "input_schema": tool.parameters or {},
-            }
-        )
+        component: dict[str, Any] = {
+            "type": "tool",
+            "name": tool.name,
+            "description": tool.description or "",
+            "input_schema": tool.parameters or {},
+        }
+        # The output (return) schema is part of a tool's contract too: a tool
+        # that quietly starts returning a different shape -- extra fields, a
+        # changed structure -- is exactly the kind of tampering we want to
+        # catch.  FastMCP only populates it for tools with structured output,
+        # so unstructured tools (e.g. ``-> str``) keep their previous hash.
+        output_schema = getattr(tool, "output_schema", None)
+        if output_schema:
+            component["output_schema"] = output_schema
+        components.append(component)
 
     prompt_manager = getattr(server, "_prompt_manager", None)
     if prompt_manager is not None:
