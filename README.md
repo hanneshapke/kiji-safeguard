@@ -16,7 +16,7 @@ This catches the classic MCP supply-chain problems: a tool quietly added or
 removed, a schema widened, or a description rewritten to poison the model
 ("rug pull" / tool-description injection).
 
-![Kiji Safeguard registry web UI — the transparency log for MCP servers](static/kiji_safeguard_screenshot.png)
+![Kiji Safeguard registry web UI — the transparency log for MCP servers](static/kiji_safeguard_screenshot.jpeg)
 
 *The registry's web UI (`GET /`): browse recent registrations, search by name or
 hash, and inspect the registered interface of any MCP server.*
