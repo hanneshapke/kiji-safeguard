@@ -10,7 +10,10 @@ descriptions and JSON schemas (plus prompts, resources and server
 instructions). No keys, no user identity: a server is registered with a
 **name**, its interface **hash** and the full **interface description**, and
 verification recomputes the hash from the live server and looks it up in the
-registry.
+registry. The check runs on both ends: the server (or its CI) **publishes**
+its intended interface, and the agent **verifies** it on every connection —
+recomputed from what actually arrived over the wire, before any tool reaches
+the model.
 
 This catches the classic MCP supply-chain problems: a tool quietly added or
 removed, a schema widened, or a description rewritten to poison the model
@@ -30,7 +33,12 @@ server — before *or* after `mcp` is imported:
 import kiji_safeguard.autosign  # noqa: F401
 ```
 
-That's it. An import hook patches `FastMCP.run()` the moment
+The same line plays two roles depending on where it sits: in the **server**
+it publishes (registers) the intended interface and catches accidental drift;
+in the **agent** it verifies that interface before any tool reaches the model
+— the actual security check (see [Threat model](#threat-model-who-should-run-what)).
+
+In the server: an import hook patches `FastMCP.run()` the moment
 `mcp.server.fastmcp` is imported (or in place, if it already was). Every time
 the server starts, its interface is extracted, hashed and checked against the
 registry — with zero further code changes. The first run registers the server
@@ -94,6 +102,46 @@ so the agent never sees the tools of a tampered server.
 > Tools with structured output need `mcp >= 1.10` on both sides — older
 > clients never receive the output schema on the wire, so their hash cannot
 > match.
+
+## Threat model: who should run what
+
+The two sides of the import are not equally trustworthy, and it pays to be
+explicit about which one protects you from what.
+
+**Server-side verification is self-attestation.** The process doing the
+check is the one you are worried about: a tampered or malicious server
+simply removes the import, sets `KIJI_SAFEGUARD_MODE=off`, or strips the
+environment variables — and even when the import survives, its warnings land
+on a subprocess stderr that MCP adapters often swallow. Treat the
+server-side hook as the **publishing half** (declaring the intended
+interface to the registry, the way a publisher signs a release) plus
+**honest-mistake drift detection**: a dependency upgrade that silently
+changes a generated schema, or a dev edit that reaches prod, is flagged at
+startup instead of when agents start failing.
+
+**The agent-side check is the security boundary.** It runs in the process
+the attacker does not control and hashes what actually arrived over the
+wire, so a server cannot lie its way past it. Production agents should run
+it strictly:
+
+```bash
+KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1 python my_agent.py
+```
+
+Recommended deployment:
+
+| Where | Mode | Why |
+| --- | --- | --- |
+| Server startup or CI release step | `register` | Publish the authoritative interface baseline |
+| Development & demos | `auto` (default) | Trust-on-first-use; new interfaces are pinned automatically |
+| Production agents | `verify` + `KIJI_SAFEGUARD_ENFORCE=1` | Strict check; a mismatch aborts the connection before any tool reaches the model |
+
+**Known limitation.** The agent looks the server up by the
+`serverInfo.name` the server reports about itself, so a tampered server can
+*rename* itself — and in `auto` mode an unknown name is TOFU-registered and
+trusted. `verify` mode with enforcement narrows this (an unregistered name
+fails instead of being adopted), but the full fix — pinning the *expected*
+name per configured server on the agent side — is future work.
 
 ## Quickstart
 
