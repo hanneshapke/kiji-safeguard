@@ -88,7 +88,7 @@ def _cmd_serve(args: argparse.Namespace) -> None:
         ) from exc
     if args.db:
         os.environ["KIJI_SAFEGUARD_DB"] = args.db
-    uvicorn.run("server.backend.main:app", host=args.host, port=args.port)
+    uvicorn.run("kiji_safeguard.server.backend.main:app", host=args.host, port=args.port)
 
 
 def main(argv: list[str] | None = None) -> None:
