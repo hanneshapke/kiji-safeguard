@@ -61,6 +61,40 @@ stage of the lifecycle:
 
 All diagnostics go to **stderr** — stdout stays clean for the stdio transport.
 
+### The same line protects the agent
+
+The import also works on the **client side**. Drop it into the process that
+*connects to* MCP servers — directly via `mcp.ClientSession` or through an
+adapter such as CrewAI's `MCPServerAdapter`:
+
+```python
+import kiji_safeguard.autosign  # noqa: F401
+```
+
+The hook detects which side it is on: importing `mcp.server.fastmcp` patches
+`FastMCP.run()` (server side), importing `mcp.client.session` patches
+`ClientSession.initialize()` (agent side) — both can coexist in one process.
+On the agent side every connection's `initialize()` handshake is followed by
+listing the server's tools, prompts and resources, rebuilding the interface
+from the wire and checking it against the registry **before any tool reaches
+the agent**:
+
+```text
+[kiji-safeguard] verified 'stock-prices' (hash 4c469eb41474f6eb…)
+[kiji-safeguard] WARNING: verification of 'stock-news' failed: interface changed: …
+```
+
+The server is identified by the `serverInfo.name` it reports during the
+handshake, and the wire-derived hash matches the one the server computes for
+itself, so both sides verify against the same registry record. The same
+environment variables apply; with `KIJI_SAFEGUARD_ENFORCE=1` a failed
+verification aborts the connection (the adapter's context manager raises),
+so the agent never sees the tools of a tampered server.
+
+> Tools with structured output need `mcp >= 1.10` on both sides — older
+> clients never receive the output schema on the wire, so their hash cannot
+> match.
+
 ## Quickstart
 
 ```bash
@@ -146,9 +180,11 @@ tests/                 # pytest suite (incl. live-registry round trips)
 ```
 
 The client library is intentionally **dependency-free** (stdlib `urllib` +
-`hashlib`), so adding the safeguard import to an MCP server pulls in nothing
-else. The registry extras (`fastapi`, `uvicorn`) are only needed where the
-registry runs.
+`hashlib`), so adding the safeguard import to an MCP server or agent pulls in
+nothing else. (The agent-side hook uses `anyio` for its thread offload, but
+only ever runs where `mcp` — which depends on `anyio` — is already
+installed.) The registry extras (`fastapi`, `uvicorn`) are only needed where
+the registry runs.
 
 ## Development
 

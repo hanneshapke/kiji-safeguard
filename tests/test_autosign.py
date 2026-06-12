@@ -38,7 +38,7 @@ def test_import_hook_patches_fresh_import(monkeypatch):
 def test_install_is_idempotent():
     autosign.install()
     autosign.install()
-    finders = [f for f in sys.meta_path if isinstance(f, autosign._FastMCPFinder)]
+    finders = [f for f in sys.meta_path if isinstance(f, autosign._AutosignFinder)]
     assert len(finders) <= 1
     from mcp.server.fastmcp import FastMCP
 

@@ -117,6 +117,79 @@ def extract_interface(server: Any) -> list[dict[str, Any]]:
     return components
 
 
+def extract_interface_from_listing(
+    tools: Any = (),
+    prompts: Any = (),
+    resources: Any = (),
+    instructions: str | None = None,
+) -> list[dict[str, Any]]:
+    """Extract an MCP interface from wire-format listing results.
+
+    This is the client-side counterpart of :func:`extract_interface`: instead
+    of a server's internal managers it consumes the objects an MCP *client*
+    receives over the wire -- ``mcp.types.Tool`` / ``Prompt`` / ``Resource``
+    from ``tools/list`` etc. plus the ``instructions`` from the initialize
+    result.  Access is duck-typed (camelCase wire attributes), so no ``mcp``
+    import is needed and the library stays dependency-free.
+
+    The normalisations mirror :func:`extract_interface` exactly, so the
+    resulting components -- and therefore :func:`aggregate_hash` -- match the
+    hash the server computes for itself.  Fields the server-side extractor
+    ignores (titles, icons, annotations, resource templates) are ignored here
+    too; adding them on one side only would break that parity.
+    """
+    components: list[dict[str, Any]] = []
+    for tool in tools:
+        component: dict[str, Any] = {
+            "type": "tool",
+            "name": tool.name,
+            "description": tool.description or "",
+            "input_schema": tool.inputSchema or {},
+        }
+        # ``outputSchema`` only exists on the wire from mcp >= 1.10; the
+        # truthy guard mirrors the server side, where FastMCP only populates
+        # it for tools with structured output.
+        output_schema = getattr(tool, "outputSchema", None)
+        if output_schema:
+            component["output_schema"] = output_schema
+        components.append(component)
+
+    for prompt in prompts:
+        components.append(
+            {
+                "type": "prompt",
+                "name": prompt.name,
+                "description": prompt.description or "",
+                "arguments": [
+                    {
+                        "name": argument.name,
+                        "description": argument.description or "",
+                        # The wire allows ``required`` to be omitted (None);
+                        # bool(None) is False, matching FastMCP's default.
+                        "required": bool(argument.required),
+                    }
+                    for argument in (prompt.arguments or [])
+                ],
+            }
+        )
+
+    for resource in resources:
+        components.append(
+            {
+                "type": "resource",
+                "uri": str(resource.uri),
+                "name": resource.name or "",
+                "description": resource.description or "",
+                "mime_type": getattr(resource, "mimeType", None) or "",
+            }
+        )
+
+    if instructions:
+        components.append({"type": "server_instructions", "instructions": instructions})
+
+    return components
+
+
 @dataclass
 class VerificationResult:
     """Outcome of a registry lookup for a server's current interface.
