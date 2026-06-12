@@ -6,7 +6,7 @@
         <title>kiji-safeguard — Sign and verify MCP servers</title>
         <meta
             name="description"
-            content="kiji-safeguard signs and verifies MCP servers with a content hash of their public interface. Catch rug pulls, tool poisoning and schema drift with one import."
+            content="kiji-safeguard signs and verifies MCP servers with a content hash of their public interface. The server publishes, the agent verifies on every connection. Catch rug pulls, tool poisoning and schema drift with one import on each side."
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -889,8 +889,12 @@
                             >
                             — tool names, descriptions, input and output
                             schemas, prompts and resources — and verifies it
-                            against a registry on every start. No keys, no
-                            identity, no ceremony. One import.
+                            against a registry — on every server start and
+                            every agent connection, before any tool reaches
+                            the model.
+                            <strong>Nothing is pre-registered:</strong> the
+                            first run registers, every later run verifies. No
+                            keys, no identity, no ceremony. One import.
                         </p>
                         <div class="oneliner">
                             <code id="oneliner-code"
@@ -929,18 +933,18 @@
                     <div
                         class="term"
                         role="img"
-                        aria-label="Terminal showing kiji-safeguard registering a server on first run, verifying it on the second run, and warning when the interface changes"
+                        aria-label="Terminal showing an agent run registering a server on first sight, verifying it on the second run, and catching a changed interface on the third"
                     >
                         <div class="term-bar"><i></i><i></i><i></i></div>
                         <div class="term-body">
-                            <div class="t-cmd">python weather_server.py</div>
+                            <div class="t-cmd">python my_agent.py</div>
                             <div class="t-ok">
                                 [kiji-safeguard] first sight of 'weather' —
                                 registered with hash
                                 <span class="t-hash">4c469eb41474f6eb…</span>
                             </div>
                             <div class="t-gap"></div>
-                            <div class="t-cmd">python weather_server.py</div>
+                            <div class="t-cmd">python my_agent.py</div>
                             <div class="t-ok">
                                 [kiji-safeguard] verified 'weather'
                                 <span class="t-dim"
@@ -953,7 +957,7 @@
                             <div class="t-dim">
                                 # someone edits a tool description…
                             </div>
-                            <div class="t-cmd">python weather_server.py</div>
+                            <div class="t-cmd">python my_agent.py</div>
                             <div class="t-warn">
                                 [kiji-safeguard] WARNING: verification of
                                 'weather' failed: interface changed
@@ -1007,9 +1011,11 @@
 
                     <p class="why-answer">
                         The fix is boring on purpose: hash the entire public
-                        interface, register it once, and recompute it from the
-                        live server every time it starts. If a single character
-                        in any name, description, schema or return type changes,
+                        interface, register it once, and recompute it — from
+                        the live server every time it starts, and in the agent
+                        from what actually arrives over the wire on every
+                        connection. If a single character in any name,
+                        description, schema or return type changes,
                         the hash changes —
                         <span class="h">4c469eb4…</span> becomes
                         <span class="h">740e904b…</span> — and verification
@@ -1159,7 +1165,7 @@
                         from <code>"same interface, different name"</code>. The
                         client library is stdlib-only (<code>urllib</code> +
                         <code>hashlib</code>), so the safeguard import adds zero
-                        dependencies to your server.
+                        dependencies to your server or agent.
                     </p>
                 </div>
             </section>
@@ -1199,13 +1205,15 @@
                             </p>
                         </div>
                         <div class="uc">
-                            <span class="tag">Production</span>
-                            <h3>Refuse to start on mismatch</h3>
+                            <span class="tag">Production agents</span>
+                            <h3>Refuse to connect on mismatch</h3>
                             <p>
-                                With <code>KIJI_SAFEGUARD_ENFORCE=1</code>, a
-                                server whose live interface doesn't match the
-                                registry aborts at startup instead of warning. A
-                                rug-pulled server never serves a single request.
+                                The same import in the agent re-derives the
+                                hash from what actually arrives over the wire
+                                — the check the server can't fake. With
+                                <code>KIJI_SAFEGUARD_ENFORCE=1</code> a
+                                tampered or unregistered server fails the
+                                handshake, and its tools never reach the model.
                             </p>
                         </div>
                         <div class="uc">
@@ -1231,13 +1239,14 @@
                     </p>
                     <h2>Running in under a minute.</h2>
                     <p class="sec-intro">
-                        Pick your path: the CLI for explicit control, or the
-                        magic import for zero further code changes.
+                        Pick your path: the magic import for zero setup —
+                        nothing needs to be registered up front — or the CLI
+                        for explicit control.
                     </p>
 
                     <div class="qs-cols">
                         <div class="qs-card">
-                            <h3>Path 1 — the CLI</h3>
+                            <h3>Path 1 — zero setup (the magic import)</h3>
                             <pre
                                 class="code"
                             ><span class="cmd">pip install "kiji-safeguard[server]"</span>
@@ -1245,29 +1254,31 @@
 <span class="c"># 1. run the registry (FastAPI + SQLite, web UI at /)</span>
 <span class="cmd">kiji-safeguard serve --port 8000</span>
 
-<span class="c"># 2. register a server</span>
-<span class="cmd">kiji-safeguard register mcp_servers/stock_price_server.py</span>
+<span class="c"># 2. add one line to your agent — or any FastMCP server:</span>
+import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
 
-<span class="c"># 3. verify any time — exits non-zero on mismatch</span>
-<span class="cmd">kiji-safeguard verify mcp_servers/stock_price_server.py</span></pre>
+<span class="c"># 3. just run it — first sight registers,</span>
+<span class="c">#    every run after verifies</span>
+<span class="cmd">python my_agent.py</span>
+
+<span class="c"># production: refuse to connect on mismatch</span>
+<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1</span> python my_agent.py</span></pre>
                         </div>
 
                         <div class="qs-card">
-                            <h3>Path 2 — the magic import</h3>
+                            <h3>Path 2 — explicit control (the CLI)</h3>
                             <pre
                                 class="code"
-                            ><span class="c"># add one line to any FastMCP server,</span>
-<span class="c"># before or after `mcp` is imported:</span>
-import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
+                            ><span class="c"># pin a reviewed interface explicitly — e.g. from CI</span>
+<span class="c"># (optional: the first execution registers it anyway)</span>
+<span class="cmd">kiji-safeguard register mcp_servers/stock_price_server.py</span>
 
-<span class="c"># first run registers, later runs verify</span>
-<span class="cmd">python my_server.py</span>
+<span class="c"># verify any time — exits non-zero on mismatch,</span>
+<span class="c"># so it doubles as a pipeline gate</span>
+<span class="cmd">kiji-safeguard verify mcp_servers/stock_price_server.py</span>
 
-<span class="c"># production: refuse to start on mismatch</span>
-<span class="cmd"><span class="env">KIJI_SAFEGUARD_ENFORCE=1</span> python my_server.py</span>
-
-<span class="c"># strict: never auto-register</span>
-<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify</span> python my_server.py</span></pre>
+<span class="c"># print the interface hash without touching the registry</span>
+<span class="cmd">kiji-safeguard hash mcp_servers/stock_price_server.py</span></pre>
                         </div>
                     </div>
 
@@ -1305,8 +1316,9 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
                                 <td>1 / true / …</td>
                                 <td>unset</td>
                                 <td>
-                                    Abort startup on verification failure
-                                    instead of warning.
+                                    Abort on verification failure instead of
+                                    warning — server startup, or the agent's
+                                    connection.
                                 </td>
                             </tr>
                         </tbody>
@@ -1469,7 +1481,7 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
                         '<span><span class="big">不一致</span><span class="small">MISMATCH</span></span>';
                     msg.className = "verdict-msg bad";
                     msg.innerHTML =
-                        "<b>Verification failed.</b> The live interface no longer matches hash 4c469eb4… — startup is refused under enforce mode.";
+                        "<b>Verification failed.</b> The live interface no longer matches hash 4c469eb4… — under enforce mode the server refuses to start and the agent refuses to connect.";
                 }
             }
 

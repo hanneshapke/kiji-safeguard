@@ -18,6 +18,11 @@ import sys
 import urllib.parse
 import urllib.request
 
+# Verify every MCP server this agent connects to (and register it on first
+# sight) before its tools reach the crew. Imported before crewai_tools so the
+# hook is in place when ``mcp`` is first loaded.
+import kiji_safeguard.autosign  # noqa: F401
+
 from dotenv import load_dotenv
 from crewai_tools import MCPServerAdapter
 

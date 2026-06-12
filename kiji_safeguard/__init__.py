@@ -20,6 +20,7 @@ from .signer import (
     aggregate_hash,
     canonical_json,
     extract_interface,
+    extract_interface_from_listing,
 )
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "aggregate_hash",
     "canonical_json",
     "extract_interface",
+    "extract_interface_from_listing",
 ]
 
 __version__ = "0.1.1"

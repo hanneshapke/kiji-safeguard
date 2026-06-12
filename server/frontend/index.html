@@ -387,6 +387,66 @@
                 }
             }
 
+            /* ---------- how it works ---------- */
+            #how {
+                margin-bottom: 56px;
+            }
+            .steps {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 1px;
+                background: var(--line-soft);
+                border: 1px solid var(--line-soft);
+                border-radius: var(--radius);
+                overflow: hidden;
+            }
+            .step {
+                background: var(--bg-elev);
+                padding: 20px;
+            }
+            .step .k {
+                font-family: var(--mono);
+                font-size: 10.5px;
+                text-transform: uppercase;
+                letter-spacing: 0.14em;
+                color: var(--accent-strong);
+                margin-bottom: 9px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .step .k .num {
+                color: var(--text-faint);
+            }
+            .step h3 {
+                font-size: 14.5px;
+                font-weight: 600;
+                letter-spacing: -0.01em;
+                margin-bottom: 6px;
+            }
+            .step p {
+                font-size: 12.5px;
+                color: var(--text-dim);
+            }
+            .step code {
+                display: block;
+                font-family: var(--mono);
+                font-size: 11px;
+                color: var(--accent-strong);
+                background: var(--bg);
+                border: 1px solid var(--line-soft);
+                border-radius: 7px;
+                padding: 7px 10px;
+                margin-top: 12px;
+                white-space: nowrap;
+                overflow-x: auto;
+            }
+            @media (max-width: 680px) {
+                .steps {
+                    grid-template-columns: 1fr;
+                }
+            }
+
             /* ---------- recent table ---------- */
             .sec-head {
                 display: flex;
@@ -865,6 +925,7 @@
                         </span>
                     </a>
                     <div class="nav-right">
+                        <a class="nav-link" href="#how">How it works</a>
                         <a class="nav-link" href="#recent">Recent</a>
                         <a
                             class="nav-link"
@@ -893,10 +954,10 @@
                     >
                 </h1>
                 <p class="sub">
-                    Look up a server by name or interface hash to inspect its
-                    registered tools, input/output schemas, and descriptions
-                    &mdash; and
-                    detect when any of them change.
+                    Servers publish their tools, schemas and descriptions
+                    here; agents re-verify them on every connection &mdash;
+                    before any tool reaches the model. Look up any server by
+                    name or interface hash.
                 </p>
 
                 <div class="lookup">
@@ -949,6 +1010,55 @@
                     <div class="n" id="stat-extras">—</div>
                     <div class="l">prompts + resources</div>
                 </div>
+            </section>
+
+            <section id="how">
+                <div class="sec-head">
+                    <h2>How it works</h2>
+                    <span class="meta">one import on each side</span>
+                </div>
+                <div class="steps">
+                    <div class="step">
+                        <div class="k">
+                            <span class="num">01</span>first sight
+                        </div>
+                        <h3>The first run registers it</h3>
+                        <p>
+                            No pre-registration: the first time a server
+                            starts &mdash; or an agent meets it &mdash; its
+                            name, interface hash and full tool / prompt /
+                            resource description are published automatically
+                            and become the baseline. CI can still pin it
+                            explicitly.
+                        </p>
+                        <code>import kiji_safeguard.autosign</code>
+                    </div>
+                    <div class="step">
+                        <div class="k"><span class="num">02</span>verify</div>
+                        <h3>The agent checks every connection</h3>
+                        <p>
+                            The same import in the agent re-derives the hash
+                            from what actually arrives over the wire and looks
+                            it up here &mdash; before any tool reaches the
+                            model.
+                        </p>
+                        <code>import kiji_safeguard.autosign</code>
+                    </div>
+                    <div class="step">
+                        <div class="k"><span class="num">03</span>enforce</div>
+                        <h3>A mismatch aborts the connection</h3>
+                        <p>
+                            In enforce mode a changed or unregistered
+                            interface fails the handshake &mdash; the agent
+                            never sees the tools of a tampered server.
+                        </p>
+                        <code>KIJI_SAFEGUARD_ENFORCE=1</code>
+                    </div>
+                </div>
+                <p class="hint">
+                    the server publishes; the agent verifies &mdash;
+                    self-attestation alone is not a security boundary
+                </p>
             </section>
 
             <section id="recent">
