@@ -13,7 +13,8 @@ verification recomputes the hash from the live server and looks it up in the
 registry. The check runs on both ends: the server (or its CI) **publishes**
 its intended interface, and the agent **verifies** it on every connection —
 recomputed from what actually arrived over the wire, before any tool reaches
-the model.
+the model. Nothing is pre-registered: the first execution registers
+(trust-on-first-use), every later run verifies.
 
 This catches the classic MCP supply-chain problems: a tool quietly added or
 removed, a schema widened, or a description rewritten to poison the model
@@ -26,8 +27,9 @@ hash, and inspect the registered interface of any MCP server.*
 
 ## The magic one-liner
 
-Add a single import to any [FastMCP](https://github.com/modelcontextprotocol/python-sdk)
-server — before *or* after `mcp` is imported:
+Add a single import to your agent — or to any
+[FastMCP](https://github.com/modelcontextprotocol/python-sdk) server —
+before *or* after `mcp` is imported:
 
 ```python
 import kiji_safeguard.autosign  # noqa: F401
@@ -38,25 +40,29 @@ it publishes (registers) the intended interface and catches accidental drift;
 in the **agent** it verifies that interface before any tool reaches the model
 — the actual security check (see [Threat model](#threat-model-who-should-run-what)).
 
-In the server: an import hook patches `FastMCP.run()` the moment
-`mcp.server.fastmcp` is imported (or in place, if it already was). Every time
-the server starts, its interface is extracted, hashed and checked against the
-registry — with zero further code changes. The first run registers the server
-(trust-on-first-use), every later run verifies it:
+There is no registration ceremony: the first execution registers the
+interface (trust-on-first-use), every run after verifies it — and flags the
+moment it changes:
 
 ```text
-$ python weather_server.py
+$ python my_agent.py
 [kiji-safeguard] first sight of 'weather' — registered with hash 4c469eb41474f6eb… at http://127.0.0.1:8000
-$ python weather_server.py
+$ python my_agent.py
 [kiji-safeguard] verified 'weather' (hash 4c469eb41474f6eb…)
 ```
 
-If someone edits a tool description after registration:
+If someone edits a tool description after that first sight:
 
 ```text
+$ python my_agent.py
 [kiji-safeguard] WARNING: verification of 'weather' failed: interface changed:
 'weather' is registered with hash 4c469eb4…, but the live interface hashes to 740e904b…
 ```
+
+In the server, an import hook patches `FastMCP.run()` the moment
+`mcp.server.fastmcp` is imported (or in place, if it already was): every time
+the server starts, its interface is extracted, hashed and checked against the
+registry — with zero further code changes.
 
 Behaviour is driven by environment variables, so the same code runs in every
 stage of the lifecycle:
@@ -65,7 +71,7 @@ stage of the lifecycle:
 | --- | --- | --- | --- |
 | `KIJI_SAFEGUARD_MODE` | `auto` / `verify` / `register` / `off` | `auto` | `auto` verifies and registers unknown servers on first sight (a *changed* interface is only flagged, never re-registered); `verify` never registers; `register` always publishes; `off` disables |
 | `KIJI_SAFEGUARD_REGISTRY` | URL | `http://127.0.0.1:8000` | Registry base URL |
-| `KIJI_SAFEGUARD_ENFORCE` | `1`/`true`/… | unset | Abort startup on failure instead of warning |
+| `KIJI_SAFEGUARD_ENFORCE` | `1`/`true`/… | unset | Abort on failure instead of warning — server startup, or the agent's connection |
 
 All diagnostics go to **stderr** — stdout stays clean for the stdio transport.
 
@@ -151,19 +157,28 @@ pip install "kiji-safeguard[server]"   # or: uv pip install -e ".[dev]" from thi
 # 1. Run the registry (FastAPI + SQLite, with a tiny web UI at /)
 kiji-safeguard serve --port 8000
 
-# 2. Register a server (loads the file, finds the FastMCP instance)
-kiji-safeguard register mcp_servers/stock_price_server.py
+# 2. Add one line to your agent — or any FastMCP server:
+#        import kiji_safeguard.autosign  # noqa: F401
 
-# 3. Verify it any time — exits non-zero on mismatch
-kiji-safeguard verify mcp_servers/stock_price_server.py
+# 3. Just run it — first sight registers, every run after verifies
+python my_agent.py
+
+# Production: refuse to connect on mismatch
+KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1 python my_agent.py
 ```
 
-Or with the magic import instead of the CLI:
+Or with explicit control via the CLI:
 
 ```bash
-python my_server.py                            # first run registers, later runs verify
-KIJI_SAFEGUARD_ENFORCE=1 python my_server.py   # production: refuse to start on mismatch
-KIJI_SAFEGUARD_MODE=verify python my_server.py # strict: never auto-register
+# Pin a reviewed interface explicitly — e.g. from CI
+# (optional: the first execution registers it anyway)
+kiji-safeguard register mcp_servers/stock_price_server.py
+
+# Verify any time — exits non-zero on mismatch, so it doubles as a pipeline gate
+kiji-safeguard verify mcp_servers/stock_price_server.py
+
+# Print the interface hash without touching the registry
+kiji-safeguard hash mcp_servers/stock_price_server.py
 ```
 
 ## Programmatic API
