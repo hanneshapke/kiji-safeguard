@@ -889,11 +889,12 @@
                             >
                             — tool names, descriptions, input and output
                             schemas, prompts and resources — and verifies it
-                            against a registry. The server
-                            <strong>publishes</strong> at startup; the agent
-                            <strong>verifies</strong> on every connection,
-                            before any tool reaches the model. No keys, no
-                            identity, no ceremony. One import on each side.
+                            against a registry — on every server start and
+                            every agent connection, before any tool reaches
+                            the model.
+                            <strong>Nothing is pre-registered:</strong> the
+                            first run registers, every later run verifies. No
+                            keys, no identity, no ceremony. One import.
                         </p>
                         <div class="oneliner">
                             <code id="oneliner-code"
@@ -932,18 +933,18 @@
                     <div
                         class="term"
                         role="img"
-                        aria-label="Terminal showing kiji-safeguard registering a server on first run, verifying it on the second run, and the agent catching a changed interface when it connects"
+                        aria-label="Terminal showing an agent run registering a server on first sight, verifying it on the second run, and catching a changed interface on the third"
                     >
                         <div class="term-bar"><i></i><i></i><i></i></div>
                         <div class="term-body">
-                            <div class="t-cmd">python weather_server.py</div>
+                            <div class="t-cmd">python my_agent.py</div>
                             <div class="t-ok">
                                 [kiji-safeguard] first sight of 'weather' —
                                 registered with hash
                                 <span class="t-hash">4c469eb41474f6eb…</span>
                             </div>
                             <div class="t-gap"></div>
-                            <div class="t-cmd">python weather_server.py</div>
+                            <div class="t-cmd">python my_agent.py</div>
                             <div class="t-ok">
                                 [kiji-safeguard] verified 'weather'
                                 <span class="t-dim"
@@ -954,8 +955,7 @@
                             </div>
                             <div class="t-gap"></div>
                             <div class="t-dim">
-                                # someone edits a tool description… and the
-                                agent catches it:
+                                # someone edits a tool description…
                             </div>
                             <div class="t-cmd">python my_agent.py</div>
                             <div class="t-warn">
@@ -1239,13 +1239,14 @@
                     </p>
                     <h2>Running in under a minute.</h2>
                     <p class="sec-intro">
-                        Pick your path: the CLI for explicit control, or the
-                        magic import for zero further code changes.
+                        Pick your path: the magic import for zero setup —
+                        nothing needs to be registered up front — or the CLI
+                        for explicit control.
                     </p>
 
                     <div class="qs-cols">
                         <div class="qs-card">
-                            <h3>Path 1 — the CLI</h3>
+                            <h3>Path 1 — zero setup (the magic import)</h3>
                             <pre
                                 class="code"
                             ><span class="cmd">pip install "kiji-safeguard[server]"</span>
@@ -1253,29 +1254,31 @@
 <span class="c"># 1. run the registry (FastAPI + SQLite, web UI at /)</span>
 <span class="cmd">kiji-safeguard serve --port 8000</span>
 
-<span class="c"># 2. register a server</span>
-<span class="cmd">kiji-safeguard register mcp_servers/stock_price_server.py</span>
+<span class="c"># 2. add one line to your agent — or any FastMCP server:</span>
+import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
 
-<span class="c"># 3. verify any time — exits non-zero on mismatch</span>
-<span class="cmd">kiji-safeguard verify mcp_servers/stock_price_server.py</span></pre>
+<span class="c"># 3. just run it — first sight registers,</span>
+<span class="c">#    every run after verifies</span>
+<span class="cmd">python my_agent.py</span>
+
+<span class="c"># production: refuse to connect on mismatch</span>
+<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1</span> python my_agent.py</span></pre>
                         </div>
 
                         <div class="qs-card">
-                            <h3>Path 2 — the magic import</h3>
+                            <h3>Path 2 — explicit control (the CLI)</h3>
                             <pre
                                 class="code"
-                            ><span class="c"># add one line to any FastMCP server —</span>
-<span class="c"># or to the agent that connects to it:</span>
-import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
+                            ><span class="c"># pin a reviewed interface explicitly — e.g. from CI</span>
+<span class="c"># (optional: the first execution registers it anyway)</span>
+<span class="cmd">kiji-safeguard register mcp_servers/stock_price_server.py</span>
 
-<span class="c"># server: first run registers, later runs verify</span>
-<span class="cmd">python my_server.py</span>
+<span class="c"># verify any time — exits non-zero on mismatch,</span>
+<span class="c"># so it doubles as a pipeline gate</span>
+<span class="cmd">kiji-safeguard verify mcp_servers/stock_price_server.py</span>
 
-<span class="c"># agent: verify every server before its tools load</span>
-<span class="cmd">python my_agent.py</span>
-
-<span class="c"># production agent: refuse to connect on mismatch</span>
-<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1</span> python my_agent.py</span></pre>
+<span class="c"># print the interface hash without touching the registry</span>
+<span class="cmd">kiji-safeguard hash mcp_servers/stock_price_server.py</span></pre>
                         </div>
                     </div>
 

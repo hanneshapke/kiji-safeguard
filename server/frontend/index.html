@@ -1019,13 +1019,17 @@
                 </div>
                 <div class="steps">
                     <div class="step">
-                        <div class="k"><span class="num">01</span>publish</div>
-                        <h3>The server registers its interface</h3>
+                        <div class="k">
+                            <span class="num">01</span>first sight
+                        </div>
+                        <h3>The first run registers it</h3>
                         <p>
-                            At startup or from CI, the server publishes its
+                            No pre-registration: the first time a server
+                            starts &mdash; or an agent meets it &mdash; its
                             name, interface hash and full tool / prompt /
-                            resource description &mdash; the authoritative
-                            baseline.
+                            resource description are published automatically
+                            and become the baseline. CI can still pin it
+                            explicitly.
                         </p>
                         <code>import kiji_safeguard.autosign</code>
                     </div>
