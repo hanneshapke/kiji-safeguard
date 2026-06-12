@@ -31,6 +31,8 @@ dev = [
     "httpx>=0.27",
     "mcp>=1.10.0",
     "pytest>=8.0",
+    "commitizen>=4.16.3",
+    "ruff>=0.15.17",
 ]
 
 [build-system]
@@ -38,7 +40,29 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["kiji_safeguard", "server", "server.backend", "server.frontend"]
+packages = [
+    "kiji_safeguard",
+    "kiji_safeguard.server",
+    "kiji_safeguard.server.backend",
+    "kiji_safeguard.server.frontend",
+]
 
 [tool.setuptools.package-data]
-"server.frontend" = ["*.html"]
+"kiji_safeguard.server.frontend" = ["*.html"]
+
+[tool.pytest.ini_options]
+# Put the repo root on sys.path so tests can `from tests.conftest import ...`
+# and `import kiji_safeguard` when run via `uv run pytest`.
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+# Read and write the version from [project].version (PEP 621) so commitizen
+# and the build backend stay in sync — no second source of truth.
+version_provider = "pep621"
+tag_format = "v$version"
+update_changelog_on_bump = true
+# Stay on 0.x until we opt into 1.0: a breaking change bumps the minor, not
+# the major.
+major_version_zero = true

@@ -13,7 +13,7 @@ TOOLS = [
 
 @pytest.fixture()
 def client(registry_db):
-    from server.backend.main import app
+    from kiji_safeguard.server.backend.main import app
 
     with TestClient(app) as test_client:
         yield test_client

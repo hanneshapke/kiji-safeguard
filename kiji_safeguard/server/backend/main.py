@@ -2,7 +2,7 @@
 
 Run with::
 
-    uvicorn server.backend.main:app --reload
+    uvicorn kiji_safeguard.server.backend.main:app --reload
 
 or ``kiji-safeguard serve``.
 """

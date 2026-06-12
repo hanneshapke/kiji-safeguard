@@ -28,7 +28,7 @@ def registry_db(tmp_path, monkeypatch):
 @pytest.fixture()
 def live_registry(registry_db):
     """A real registry served by uvicorn on a random localhost port."""
-    from server.backend.main import app
+    from kiji_safeguard.server.backend.main import app
 
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
