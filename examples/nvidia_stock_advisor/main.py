@@ -18,15 +18,14 @@ import sys
 import urllib.parse
 import urllib.request
 
+from crew import build_crew, server_params
+from crewai_tools import MCPServerAdapter
+from dotenv import load_dotenv
+
 # Verify every MCP server this agent connects to (and register it on first
 # sight) before its tools reach the crew. Imported before crewai_tools so the
 # hook is in place when ``mcp`` is first loaded.
 import kiji_safeguard.autosign  # noqa: F401
-
-from dotenv import load_dotenv
-from crewai_tools import MCPServerAdapter
-
-from crew import build_crew, server_params
 
 MCP_SERVER_NAMES = ("stock-prices", "stock-news")
 
@@ -41,12 +40,11 @@ def print_safeguard_status() -> None:
     """
     # Read here (not at import) so the value loaded from .env by load_dotenv()
     # is honored — and matches the registry the server subprocesses use.
-    registry = os.environ.get("KIJI_SAFEGUARD_REGISTRY", "http://127.0.0.1:8000")
+    registry = os.environ.get("KIJI_SAFEGUARD_REGISTRY", "http://127.0.0.1:8001")
     print("kiji-safeguard registry status:")
     for name in MCP_SERVER_NAMES:
-        url = (
-            f"{registry}/servers?"
-            + urllib.parse.urlencode({"name": name, "limit": 1})
+        url = f"{registry}/servers?" + urllib.parse.urlencode(
+            {"name": name, "limit": 1}
         )
         try:
             with urllib.request.urlopen(url, timeout=3) as response:

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from kiji_safeguard import MCPSigner, aggregate_hash, extract_interface
+from kiji_safeguard import (
+    MCPSigner,
+    aggregate_hash,
+    diff_interfaces,
+    extract_interface,
+)
 from tests.conftest import make_server
 
 TOOL_A = {"type": "tool", "name": "a", "description": "A", "input_schema": {}}
@@ -56,6 +61,31 @@ def test_signer_hash_changes_with_interface():
     assert base.hash != extended.hash
 
 
+def test_diff_interfaces_identical_is_empty():
+    assert diff_interfaces([TOOL_A, TOOL_B], [TOOL_B, TOOL_A]) == ""
+
+
+def test_diff_interfaces_reports_added_component():
+    diff = diff_interfaces([TOOL_A], [TOOL_A, TOOL_B])
+    assert "+ added tool 'b'" in diff
+    assert "removed" not in diff
+
+
+def test_diff_interfaces_reports_removed_component():
+    diff = diff_interfaces([TOOL_A, TOOL_B], [TOOL_A])
+    assert "- removed tool 'b'" in diff
+    assert "added" not in diff
+
+
+def test_diff_interfaces_reports_changed_component():
+    tampered = dict(TOOL_A, description="A, but evil")
+    diff = diff_interfaces([TOOL_A], [tampered])
+    assert "~ changed tool 'a'" in diff
+    # The unified diff shows the old and new field values.
+    assert '-  "description": "A"' in diff
+    assert '+  "description": "A, but evil"' in diff
+
+
 def test_register_and_verify_round_trip(live_registry):
     signer = MCPSigner.from_server(make_server())
     record = signer.register(live_registry)
@@ -75,6 +105,9 @@ def test_verify_detects_interface_change(live_registry):
     assert not result
     assert result.code == "changed"
     assert "interface changed" in result.reason
+    # The diff names the component that appeared since registration.
+    assert result.diff
+    assert "+ added tool 'sneaky'" in result.diff
 
 
 def test_verify_unregistered_server(live_registry):

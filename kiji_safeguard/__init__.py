@@ -19,6 +19,7 @@ from .signer import (
     VerificationResult,
     aggregate_hash,
     canonical_json,
+    diff_interfaces,
     extract_interface,
     extract_interface_from_listing,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "VerificationResult",
     "aggregate_hash",
     "canonical_json",
+    "diff_interfaces",
     "extract_interface",
     "extract_interface_from_listing",
 ]
