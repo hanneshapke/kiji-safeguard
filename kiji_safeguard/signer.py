@@ -16,6 +16,7 @@ therefore independent of the order in which tools were declared.
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import json
 import urllib.error
@@ -39,6 +40,73 @@ def aggregate_hash(components: list[dict[str, Any]]) -> str:
         for component in components
     )
     return hashlib.sha256("".join(digests).encode()).hexdigest()
+
+
+def _component_key(component: dict[str, Any]) -> tuple[str, ...]:
+    """Stable identity for a component, so two interfaces can be aligned.
+
+    Tools and prompts are identified by name, resources by URI and the
+    server instructions are a singleton; anything else falls back to its
+    canonical form so unknown component types still diff sensibly.
+    """
+    component_type = str(component.get("type", ""))
+    if component_type == "resource":
+        return (component_type, str(component.get("uri", "")))
+    if component_type == "server_instructions":
+        return (component_type,)
+    if "name" in component:
+        return (component_type, str(component.get("name", "")))
+    return (component_type, canonical_json(component))
+
+
+def _describe(key: tuple[str, ...]) -> str:
+    """Human-readable label for a component key, e.g. ``tool 'foo'``."""
+    if key[0] == "server_instructions":
+        return "server instructions"
+    if len(key) > 1:
+        return f"{key[0]} {key[1]!r}"
+    return key[0]
+
+
+def diff_interfaces(
+    recorded: list[dict[str, Any]], generated: list[dict[str, Any]]
+) -> str:
+    """Human-readable diff between two interface component lists.
+
+    Components are aligned by :func:`_component_key`; added and removed
+    components are reported one per line, and a component present in both
+    whose canonical form changed gets a unified diff of its pretty-printed
+    JSON (so nested ``input_schema`` / ``output_schema`` changes show up).
+    Returns an empty string when the two interfaces are identical.
+    """
+    recorded_by_key = {_component_key(c): c for c in recorded}
+    generated_by_key = {_component_key(c): c for c in generated}
+    keys = sorted(
+        set(recorded_by_key) | set(generated_by_key),
+        key=lambda key: tuple(map(str, key)),
+    )
+
+    lines: list[str] = []
+    for key in keys:
+        old = recorded_by_key.get(key)
+        new = generated_by_key.get(key)
+        if old is None:
+            lines.append(f"+ added {_describe(key)}")
+        elif new is None:
+            lines.append(f"- removed {_describe(key)}")
+        elif canonical_json(old) != canonical_json(new):
+            lines.append(f"~ changed {_describe(key)}:")
+            lines.extend(
+                "  " + line
+                for line in difflib.unified_diff(
+                    json.dumps(old, indent=2, sort_keys=True).splitlines(),
+                    json.dumps(new, indent=2, sort_keys=True).splitlines(),
+                    fromfile="recorded",
+                    tofile="generated",
+                    lineterm="",
+                )
+            )
+    return "\n".join(lines)
 
 
 def extract_interface(server: Any) -> list[dict[str, Any]]:
@@ -196,13 +264,16 @@ class VerificationResult:
 
     ``code`` is one of ``"ok"``, ``"changed"`` (name registered with a
     different hash), ``"unregistered"`` (name unknown to the registry) or
-    ``"error"`` (lookup failed).
+    ``"error"`` (lookup failed).  ``diff`` is a human-readable description of
+    how the live interface differs from the registered one; it is only set
+    for ``code="changed"`` results.
     """
 
     valid: bool
     reason: str
     record: dict[str, Any] | None = None
     code: str = "error"
+    diff: str | None = None
 
     def __bool__(self) -> bool:
         return self.valid
@@ -288,6 +359,7 @@ class MCPSigner:
                 ),
                 record=registered,
                 code="changed",
+                diff=diff_interfaces(registered.get("interface") or [], self.interface),
             )
 
         other_names = sorted({str(record.get("name")) for record in records})

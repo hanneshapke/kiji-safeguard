@@ -74,6 +74,8 @@ def _cmd_verify(args: argparse.Namespace) -> None:
         result = signer.verify(args.registry)
         status = "OK" if result else "FAILED"
         print(f"{status}\t{signer.name}\t{result.reason}")
+        if result.diff:
+            print(result.diff)
         failed = failed or not result.valid
     if failed:
         raise SystemExit(1)

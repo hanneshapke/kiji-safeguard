@@ -104,6 +104,9 @@ def test_on_run_warns_on_changed_interface(live_registry, monkeypatch, capsys):
     autosign._on_run(make_server(extra_tool=True))
     err = capsys.readouterr().err
     assert "WARNING" in err and "interface changed" in err
+    # The diff of what changed is logged alongside the warning.
+    assert "interface diff" in err
+    assert "+ added tool 'sneaky'" in err
 
 
 def test_on_run_enforce_raises_on_failure(live_registry, monkeypatch):

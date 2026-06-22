@@ -119,6 +119,11 @@ def _apply_policy(signer: MCPSigner) -> None:
                 f"{signer.hash} at {registry}"
             )
     else:
+        if result.diff:
+            _note(
+                f"interface diff for {signer.name!r} (recorded → generated):\n"
+                f"{result.diff}"
+            )
         _fail(f"verification of {signer.name!r} failed: {result.reason}")
 
 
