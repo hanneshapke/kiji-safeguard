@@ -598,6 +598,45 @@
                 background: var(--text-faint);
             }
 
+            /* pending-approvals panel */
+            .btn.sm {
+                padding: 8px 16px;
+                font-size: 13px;
+            }
+            .btn.reject {
+                background: var(--revoked);
+                color: #fff;
+            }
+            .approval-actions {
+                display: flex;
+                gap: 10px;
+                margin-top: 14px;
+            }
+            .diff {
+                font-family: var(--mono);
+                font-size: 12px;
+                line-height: 1.5;
+                white-space: pre-wrap;
+                word-break: break-word;
+                max-height: 320px;
+                overflow: auto;
+                margin: 0;
+                padding: 12px 14px;
+                background: var(--bg);
+                border: 1px solid var(--line-soft);
+                border-radius: 8px;
+                color: var(--text);
+            }
+            #approval-rows .row {
+                cursor: default;
+            }
+            #approval-rows .row .detail {
+                max-height: none;
+                border-top: 1px solid var(--line-soft);
+                margin-top: 15px;
+                padding-top: 16px;
+            }
+
             @media (max-width: 760px) {
                 .thead {
                     display: none;
@@ -1059,6 +1098,24 @@
                     the server publishes; the agent verifies &mdash;
                     self-attestation alone is not a security boundary
                 </p>
+            </section>
+
+            <section id="approvals" style="display: none">
+                <div class="sec-head">
+                    <h2>Pending Approvals</h2>
+                    <span class="meta" id="approval-count">— awaiting review</span>
+                </div>
+
+                <div class="table">
+                    <div class="thead">
+                        <div>fp</div>
+                        <div>server / new hash</div>
+                        <div>interface</div>
+                        <div>requested</div>
+                        <div>status</div>
+                    </div>
+                    <div id="approval-rows"></div>
+                </div>
             </section>
 
             <section id="recent">
@@ -1774,8 +1831,10 @@
             }
 
             let tT;
-            function toast() {
+            function toast(msg) {
                 const t = document.getElementById("toast");
+                t.querySelector("span").textContent =
+                    typeof msg === "string" ? msg : "Copied to clipboard";
                 t.classList.add("show");
                 clearTimeout(tT);
                 tT = setTimeout(() => t.classList.remove("show"), 1600);
@@ -1916,6 +1975,116 @@
                 }
             }
 
+            /* ===== Pending approvals ===== */
+            let lastPendingSig = "";
+
+            async function loadPending() {
+                try {
+                    const resp = await fetch("approvals?status=pending&limit=50");
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    const data = await resp.json();
+                    renderPending(data.approvals || []);
+                } catch (err) {
+                    console.error("loadPending:", err);
+                }
+            }
+
+            function renderPending(list) {
+                /* skip re-render (and its animation) when nothing changed */
+                const sig = JSON.stringify(
+                    list.map((a) => [a.id, a.status, a.created_at]),
+                );
+                if (sig === lastPendingSig) return;
+                lastPendingSig = sig;
+
+                const sec = document.getElementById("approvals");
+                const rows = document.getElementById("approval-rows");
+                document.getElementById("approval-count").textContent =
+                    list.length + " awaiting review";
+                sec.style.display = list.length ? "" : "none";
+                if (!list.length) {
+                    rows.innerHTML = "";
+                    return;
+                }
+                rows.innerHTML = list
+                    .map(
+                        (a, i) =>
+                            '<div class="row" data-aid="' +
+                            a.id +
+                            '" style="animation-delay:' +
+                            i * 55 +
+                            'ms">' +
+                            fpSVG(a.new_hash) +
+                            '<div style="min-width:0">' +
+                            '<div class="srv-name">' +
+                            esc(a.name) +
+                            "</div>" +
+                            '<div class="hash-sub">' +
+                            shortenHash(a.new_hash) +
+                            "</div>" +
+                            "</div>" +
+                            '<div class="iface">' +
+                            esc(ifaceLabel(a)) +
+                            "</div>" +
+                            '<div class="when">' +
+                            esc(relativeTime(a.created_at)) +
+                            "</div>" +
+                            '<div><span class="badge pending">pending</span></div>' +
+                            '<div class="detail">' +
+                            (a.diff
+                                ? '<pre class="diff">' + esc(a.diff) + "</pre>"
+                                : '<div class="iface">interface changed</div>') +
+                            '<div class="approval-actions">' +
+                            '<button class="btn sm approve" data-aid="' +
+                            a.id +
+                            '">Approve</button>' +
+                            '<button class="btn sm reject" data-aid="' +
+                            a.id +
+                            '">Reject</button>' +
+                            "</div>" +
+                            "</div>" +
+                            "</div>",
+                    )
+                    .join("");
+                bindApprovalRows();
+            }
+
+            function bindApprovalRows() {
+                document
+                    .querySelectorAll(
+                        "#approval-rows .approve, #approval-rows .reject",
+                    )
+                    .forEach((b) => {
+                        if (b.dataset.bound) return;
+                        b.dataset.bound = "1";
+                        b.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            decide(
+                                b.dataset.aid,
+                                b.classList.contains("approve")
+                                    ? "approve"
+                                    : "reject",
+                            );
+                        });
+                    });
+            }
+
+            async function decide(id, action) {
+                try {
+                    const resp = await fetch("approvals/" + id + "/" + action, {
+                        method: "POST",
+                    });
+                    if (!resp.ok) throw new Error("HTTP " + resp.status);
+                    toast(action === "approve" ? "Approved" : "Rejected");
+                    lastPendingSig = ""; /* force a refresh */
+                    await loadPending();
+                    await loadRecent(false); /* an approval added a trusted record */
+                } catch (err) {
+                    console.error(action, err);
+                    toast("Action failed");
+                }
+            }
+
             /* ===== Init ===== */
             const qEl = document.getElementById("q");
             qEl.addEventListener("input", () => doSearch(false));
@@ -1941,6 +2110,8 @@
 
             /* initial load */
             loadRecent(false);
+            loadPending();
+            setInterval(loadPending, 4000);
         </script>
     </body>
 </html>

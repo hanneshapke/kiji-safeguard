@@ -26,13 +26,22 @@ Behaviour is controlled by environment variables:
     registers it on first sight (trust-on-first-use); a *changed* interface
     is never re-registered, only flagged.  ``verify`` checks strictly
     without ever registering, ``register`` always publishes, ``off``
-    disables the hook.
+    disables the hook.  ``approval`` behaves like ``verify`` but, when the
+    interface *changed*, pauses and opens a request in the registry's web UI:
+    a human approves (the new interface is registered and execution proceeds)
+    or rejects (execution is hard-blocked).
 ``KIJI_SAFEGUARD_REGISTRY``
     Registry base URL, default ``http://127.0.0.1:8000``.
 ``KIJI_SAFEGUARD_ENFORCE``
     When truthy (``1``/``true``/``yes``/``on``) a failed verification or an
     unreachable registry aborts startup — or, on the agent side, the
     connection — instead of printing a warning.
+``KIJI_SAFEGUARD_APPROVAL_TIMEOUT``
+    In ``approval`` mode, seconds to wait for a human decision before giving
+    up (default ``1800``).  A timeout falls back to enforce/warn behaviour.
+``KIJI_SAFEGUARD_APPROVAL_POLL_INTERVAL``
+    In ``approval`` mode, seconds between registry polls while waiting
+    (default ``3``).
 
 All diagnostics go to stderr: stdout belongs to the stdio transport.
 """
@@ -76,6 +85,20 @@ def _enforce() -> bool:
         "yes",
         "on",
     }
+
+
+def _approval_timeout() -> float:
+    try:
+        return float(os.environ.get("KIJI_SAFEGUARD_APPROVAL_TIMEOUT", "1800"))
+    except ValueError:
+        return 1800.0
+
+
+def _approval_interval() -> float:
+    try:
+        return float(os.environ.get("KIJI_SAFEGUARD_APPROVAL_POLL_INTERVAL", "3"))
+    except ValueError:
+        return 3.0
 
 
 def _note(message: str) -> None:
@@ -124,7 +147,50 @@ def _apply_policy(signer: MCPSigner) -> None:
                 f"interface diff for {signer.name!r} (recorded → generated):\n"
                 f"{result.diff}"
             )
+        if mode == "approval" and result.code == "changed":
+            _await_approval(signer, result, registry)
+            return
         _fail(f"verification of {signer.name!r} failed: {result.reason}")
+
+
+def _await_approval(signer: MCPSigner, result: Any, registry: str) -> None:
+    """Pause execution until a human approves or rejects the changed interface.
+
+    Approve registers the new interface (the registry does this) and lets
+    execution proceed; reject hard-blocks via :class:`SafeguardError`
+    regardless of enforce mode; a timeout falls back to :func:`_fail`.
+    """
+    recorded_hash = (result.record or {}).get("hash")
+    timeout = _approval_timeout()
+    _note(
+        f"interface of {signer.name!r} changed; requesting human approval at "
+        f"{registry} (waiting up to {int(timeout)}s)"
+    )
+    try:
+        approval_id = signer.request_approval(registry, recorded_hash, result.diff)
+    except (ConnectionError, ValueError) as exc:
+        _fail(f"could not open approval request for {signer.name!r}: {exc}")
+        return
+    try:
+        decision = signer.poll_approval(
+            registry,
+            approval_id,
+            interval=_approval_interval(),
+            overall_timeout=timeout,
+        )
+    except TimeoutError as exc:
+        _fail(str(exc))
+        return
+    if decision == "approved":
+        _note(
+            f"approved: {signer.name!r} new interface (hash {signer.hash}) "
+            "is now trusted"
+        )
+        return
+    # An explicit human rejection always blocks, even when enforce is off.
+    raise SafeguardError(
+        f"approval for {signer.name!r} (hash {signer.hash}) was rejected"
+    )
 
 
 def _on_run(server: Any) -> None:

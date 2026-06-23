@@ -25,6 +25,23 @@ CREATE TABLE IF NOT EXISTS servers (
 );
 CREATE INDEX IF NOT EXISTS idx_servers_hash ON servers (hash);
 CREATE INDEX IF NOT EXISTS idx_servers_name ON servers (name);
+
+CREATE TABLE IF NOT EXISTS approvals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    recorded_hash TEXT,
+    new_hash TEXT NOT NULL,
+    new_interface TEXT NOT NULL,
+    diff TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_approvals_status ON approvals (status);
+-- At most one *pending* request per (name, new_hash): reconnect storms collapse
+-- onto a single row instead of piling up duplicates awaiting the same decision.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_approvals_pending_unique
+    ON approvals (name, new_hash) WHERE status = 'pending';
 """
 
 
@@ -89,6 +106,84 @@ def get_recent(
     return [_row_to_record(row) for row in rows], total
 
 
+def create_approval(
+    name: str,
+    recorded_hash: str | None,
+    new_hash: str,
+    new_interface: list[dict[str, Any]],
+    diff: str = "",
+) -> dict[str, Any]:
+    """Open a pending approval request for a changed interface.
+
+    Idempotent per ``(name, new_hash)`` while pending: a repeated request for
+    the same change returns the existing pending row instead of creating a
+    duplicate (mirrors :func:`insert_server`'s select-or-insert pattern).
+    """
+    created_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as connection:
+        existing = connection.execute(
+            "SELECT * FROM approvals "
+            "WHERE name = ? AND new_hash = ? AND status = 'pending'",
+            (name, new_hash),
+        ).fetchone()
+        if existing is not None:
+            return _approval_row_to_record(existing)
+        cursor = connection.execute(
+            "INSERT INTO approvals "
+            "(name, recorded_hash, new_hash, new_interface, diff, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
+            (name, recorded_hash, new_hash, json.dumps(new_interface), diff, created_at),
+        )
+        row = connection.execute(
+            "SELECT * FROM approvals WHERE id = ?", (cursor.lastrowid,)
+        ).fetchone()
+    return _approval_row_to_record(row)
+
+
+def get_approval(approval_id: int) -> dict[str, Any] | None:
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM approvals WHERE id = ?", (approval_id,)
+        ).fetchone()
+    return _approval_row_to_record(row) if row is not None else None
+
+
+def get_pending_approvals(
+    limit: int = 50, offset: int = 0
+) -> tuple[list[dict[str, Any]], int]:
+    with _connect() as connection:
+        rows = connection.execute(
+            "SELECT * FROM approvals WHERE status = 'pending' "
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+        total = connection.execute(
+            "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"
+        ).fetchone()[0]
+    return [_approval_row_to_record(row) for row in rows], total
+
+
+def resolve_approval(approval_id: int, status: str) -> dict[str, Any] | None:
+    """Mark a pending request ``approved``/``rejected``; single-shot.
+
+    The ``status = 'pending'`` guard means only the first caller flips a row,
+    so concurrent approve/reject clicks (or client retries) are race-safe.
+    Returns the row whether or not this call performed the transition, or
+    ``None`` if the id is unknown.
+    """
+    resolved_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE approvals SET status = ?, resolved_at = ? "
+            "WHERE id = ? AND status = 'pending'",
+            (status, resolved_at, approval_id),
+        )
+        row = connection.execute(
+            "SELECT * FROM approvals WHERE id = ?", (approval_id,)
+        ).fetchone()
+    return _approval_row_to_record(row) if row is not None else None
+
+
 def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -96,4 +191,18 @@ def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
         "hash": row["hash"],
         "interface": json.loads(row["interface"]),
         "registered_at": row["registered_at"],
+    }
+
+
+def _approval_row_to_record(row: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "recorded_hash": row["recorded_hash"],
+        "new_hash": row["new_hash"],
+        "new_interface": json.loads(row["new_interface"]),
+        "diff": row["diff"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "resolved_at": row["resolved_at"],
     }

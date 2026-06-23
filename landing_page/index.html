@@ -1227,6 +1227,25 @@
                                 org has approved.
                             </p>
                         </div>
+                        <div class="uc" style="grid-column: 1 / -1">
+                            <span class="tag">Human in the loop</span>
+                            <h3>Pause and ask for approval</h3>
+                            <p>
+                                With
+                                <code>KIJI_SAFEGUARD_MODE=approval</code> a
+                                changed interface neither silently warns nor
+                                hard-fails — it <strong>pauses</strong> and
+                                opens a request in the registry's
+                                <strong>Pending Approvals</strong> panel showing
+                                the exact diff of what moved. A reviewer clicks
+                                <strong>Approve</strong> — the new interface is
+                                pinned as trusted and the run continues — or
+                                <strong>Reject</strong>, which blocks it.
+                                Trust-on-first-use is fine on a laptop; a human
+                                gate is what you want when the tool surface
+                                changes in production.
+                            </p>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -1262,7 +1281,10 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
 <span class="cmd">python my_agent.py</span>
 
 <span class="c"># production: refuse to connect on mismatch</span>
-<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1</span> python my_agent.py</span></pre>
+<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=verify KIJI_SAFEGUARD_ENFORCE=1</span> python my_agent.py</span>
+
+<span class="c"># human in the loop: pause on a change, approve in the web UI</span>
+<span class="cmd"><span class="env">KIJI_SAFEGUARD_MODE=approval</span> python my_agent.py</span></pre>
                         </div>
 
                         <div class="qs-card">
@@ -1297,12 +1319,14 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
                         <tbody>
                             <tr>
                                 <td>KIJI_SAFEGUARD_MODE</td>
-                                <td>auto / verify / register / off</td>
+                                <td>auto / verify / register / approval / off</td>
                                 <td>auto</td>
                                 <td>
                                     auto verifies and registers unknown servers
                                     on first sight; verify never registers;
-                                    register always publishes; off disables.
+                                    register always publishes; approval pauses on
+                                    a changed interface and waits for a human to
+                                    approve/reject it in the web UI; off disables.
                                 </td>
                             </tr>
                             <tr>
@@ -1319,6 +1343,24 @@ import kiji_safeguard.autosign  <span class="c"># noqa: F401</span>
                                     Abort on verification failure instead of
                                     warning — server startup, or the agent's
                                     connection.
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>KIJI_SAFEGUARD_APPROVAL_TIMEOUT</td>
+                                <td>seconds</td>
+                                <td>1800</td>
+                                <td>
+                                    approval mode: how long to wait for a human
+                                    decision before falling back to enforce/warn.
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>KIJI_SAFEGUARD_APPROVAL_POLL_INTERVAL</td>
+                                <td>seconds</td>
+                                <td>3</td>
+                                <td>
+                                    approval mode: how often to poll the registry
+                                    while waiting for a decision.
                                 </td>
                             </tr>
                         </tbody>
