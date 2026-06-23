@@ -33,7 +33,7 @@ Enter
 Sleep 3s
 
 # 4. Non-zero exit -- a pipeline gate would fail the build right here.
-Type "echo \"exit code: $?\""
+Type 'echo "exit code: $?"'
 Sleep 400ms
 Enter
 Sleep 2.5s

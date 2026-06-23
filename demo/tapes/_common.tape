@@ -10,7 +10,7 @@
 # starts a fresh registry per tape. VHS runs these from the repository root.
 
 Set Shell "bash"
-Set FontFamily "JetBrains Mono"
+Set FontFamily "JetBrains Mono, Menlo, monospace"
 Set FontSize 20
 Set Width 1280
 Set Height 720
@@ -27,7 +27,7 @@ Set Theme { "name": "kiji-safeguard", "background": "#0c121d", "foreground": "#e
 # no KIJI_SAFEGUARD_REGISTRY is needed.
 Hide
 Type "source .venv-demo/bin/activate" Enter
-Type "export PS1='\\[\\e[38;5;245m\\]kiji \\[\\e[38;5;174m\\]› \\[\\e[0m\\]'" Enter
+Type "export PS1='\[\e[38;5;245m\]kiji \[\e[38;5;174m\]› \[\e[0m\]'" Enter
 Type "clear" Enter
 Sleep 600ms
 Show
