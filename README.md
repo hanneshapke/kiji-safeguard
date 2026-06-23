@@ -20,6 +20,13 @@ This catches the classic MCP supply-chain problems: a tool quietly added or
 removed, a schema widened, or a description rewritten to poison the model
 ("rug pull" / tool-description injection).
 
+![kiji-safeguard registering a server, verifying it, then catching a tampered build of the same server](demo/gif/rug-pull.svg)
+
+*Register a reviewed MCP interface, verify it on every run, and watch the seal
+break the moment a tampered build of the same server ships — a non-zero exit
+that fails a CI gate. This is a static poster; the animated GIF is built from
+[VHS demo tapes](demo/) with `make -C demo`.*
+
 ![Kiji Safeguard registry web UI — the transparency log for MCP servers](https://raw.githubusercontent.com/hanneshapke/kiji-safeguard/main/static/kiji_safeguard_screenshot.jpeg)
 
 *The registry's web UI (`GET /`): browse recent registrations, search by name or
@@ -262,6 +269,7 @@ server/                # registry service (mirrors agent-signing's layout)
 └── frontend/
     └── index.html     # web UI (shares agent-signing's registry design)
 examples/              # demo project whose MCP servers use the magic import
+demo/                  # VHS demo tapes + fixtures that render the README GIFs
 tests/                 # pytest suite (incl. live-registry round trips)
 ```
 
