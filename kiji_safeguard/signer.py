@@ -19,6 +19,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -373,6 +374,70 @@ class MCPSigner:
             reason=f"server {self.name!r} is not registered{suffix}",
             code="unregistered",
         )
+
+    def request_approval(
+        self,
+        registry_url: str = DEFAULT_REGISTRY_URL,
+        recorded_hash: str | None = None,
+        diff: str | None = None,
+        timeout: float = 10.0,
+    ) -> int:
+        """Open a pending approval request for this changed interface.
+
+        Returns the request id to poll.  Idempotent on the registry side: a
+        repeated request for the same ``(name, hash)`` joins the existing
+        pending row rather than creating a duplicate.
+        """
+        status, body = _http_json(
+            "POST",
+            f"{registry_url.rstrip('/')}/approvals",
+            payload={
+                "name": self.name,
+                "recorded_hash": recorded_hash,
+                "new_hash": self.hash,
+                "new_interface": self.interface,
+                "diff": diff or "",
+            },
+            timeout=timeout,
+        )
+        if status not in (200, 201) or not isinstance(body, dict) or "id" not in body:
+            raise ValueError(f"registry rejected approval request ({status}): {body}")
+        return int(body["id"])
+
+    def poll_approval(
+        self,
+        registry_url: str = DEFAULT_REGISTRY_URL,
+        approval_id: int = 0,
+        interval: float = 3.0,
+        overall_timeout: float = 1800.0,
+        per_request_timeout: float = 10.0,
+    ) -> str:
+        """Block until an approval request resolves; return its final status.
+
+        Returns ``"approved"`` or ``"rejected"``.  Transient connection errors
+        (e.g. the registry restarting) are swallowed and retried until the
+        overall deadline.  Raises :class:`TimeoutError` if the request is still
+        pending when the deadline passes.
+        """
+        base = registry_url.rstrip("/")
+        url = f"{base}/approvals/{approval_id}"
+        deadline = time.monotonic() + overall_timeout
+        while True:
+            try:
+                status, body = _http_json("GET", url, timeout=per_request_timeout)
+                if status == 200 and isinstance(body, dict):
+                    decision = body.get("status")
+                    if decision in ("approved", "rejected"):
+                        return decision
+            except ConnectionError:
+                pass  # registry briefly unreachable; retry until the deadline
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(
+                    f"approval request {approval_id} for {self.name!r} was not "
+                    f"resolved within {overall_timeout:.0f}s"
+                )
+            time.sleep(min(interval, remaining))
 
 
 def _http_json(

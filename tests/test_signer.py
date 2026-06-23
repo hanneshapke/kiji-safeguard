@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from kiji_safeguard import (
@@ -8,7 +10,7 @@ from kiji_safeguard import (
     diff_interfaces,
     extract_interface,
 )
-from tests.conftest import make_server
+from tests.conftest import make_server, resolve_pending
 
 TOOL_A = {"type": "tool", "name": "a", "description": "A", "input_schema": {}}
 TOOL_B = {"type": "tool", "name": "b", "description": "B", "input_schema": {}}
@@ -131,3 +133,62 @@ def test_verify_unreachable_registry():
     signer = MCPSigner.from_server(make_server())
     with pytest.raises(ConnectionError):
         signer.verify("http://127.0.0.1:1", timeout=0.5)
+
+
+def _changed_signer(live_registry) -> tuple[MCPSigner, str]:
+    """Register a server, return a tampered signer + the recorded hash."""
+    original = MCPSigner.from_server(make_server())
+    original.register(live_registry)
+    tampered = MCPSigner.from_server(make_server(extra_tool=True))
+    return tampered, original.hash
+
+
+def test_request_approval_creates_pending(live_registry):
+    tampered, recorded_hash = _changed_signer(live_registry)
+    approval_id = tampered.request_approval(
+        live_registry, recorded_hash, diff="+ added tool 'sneaky'"
+    )
+    assert isinstance(approval_id, int)
+    # A repeat request joins the same pending row instead of duplicating.
+    assert tampered.request_approval(live_registry, recorded_hash) == approval_id
+
+
+def test_poll_approval_returns_approved(live_registry):
+    tampered, recorded_hash = _changed_signer(live_registry)
+    approval_id = tampered.request_approval(live_registry, recorded_hash)
+
+    resolver = threading.Thread(
+        target=resolve_pending, args=(live_registry, "approve"), daemon=True
+    )
+    resolver.start()
+    decision = tampered.poll_approval(
+        live_registry, approval_id, interval=0.05, overall_timeout=5
+    )
+    resolver.join(timeout=2)
+    assert decision == "approved"
+    # Approval registered the new interface, so it now verifies.
+    assert tampered.verify(live_registry)
+
+
+def test_poll_approval_returns_rejected(live_registry):
+    tampered, recorded_hash = _changed_signer(live_registry)
+    approval_id = tampered.request_approval(live_registry, recorded_hash)
+
+    resolver = threading.Thread(
+        target=resolve_pending, args=(live_registry, "reject"), daemon=True
+    )
+    resolver.start()
+    decision = tampered.poll_approval(
+        live_registry, approval_id, interval=0.05, overall_timeout=5
+    )
+    resolver.join(timeout=2)
+    assert decision == "rejected"
+
+
+def test_poll_approval_times_out(live_registry):
+    tampered, recorded_hash = _changed_signer(live_registry)
+    approval_id = tampered.request_approval(live_registry, recorded_hash)
+    with pytest.raises(TimeoutError):
+        tampered.poll_approval(
+            live_registry, approval_id, interval=0.05, overall_timeout=0.2
+        )

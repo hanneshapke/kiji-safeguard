@@ -48,6 +48,32 @@ def live_registry(registry_db):
     thread.join(timeout=5)
 
 
+def resolve_pending(
+    registry_url: str,
+    action: str,
+    *,
+    name: str | None = None,
+    interval: float = 0.02,
+    attempts: int = 500,
+) -> None:
+    """Wait for a pending approval to appear, then approve/reject it.
+
+    Intended as a ``threading.Thread`` target so the blocking ``poll_approval``
+    on the main thread resolves mid-poll without flakiness.
+    """
+    from kiji_safeguard.signer import _http_json
+
+    base = registry_url.rstrip("/")
+    for _ in range(attempts):
+        status, body = _http_json("GET", f"{base}/approvals?status=pending")
+        if status == 200 and body and body.get("approvals"):
+            for approval in body["approvals"]:
+                if name is None or approval["name"] == name:
+                    _http_json("POST", f"{base}/approvals/{approval['id']}/{action}")
+                    return
+        time.sleep(interval)
+
+
 def make_server(
     name: str = "demo-server", extra_tool: bool = False, full: bool = False
 ) -> FastMCP:

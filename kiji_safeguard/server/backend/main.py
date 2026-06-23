@@ -20,6 +20,9 @@ from kiji_safeguard.signer import aggregate_hash
 
 from . import database
 from .models import (
+    ApprovalListResponse,
+    ApprovalRecord,
+    ApprovalRequest,
     InterfaceSummary,
     ServerListResponse,
     ServerRecord,
@@ -52,6 +55,10 @@ def _summarise(interface: list[dict[str, Any]]) -> InterfaceSummary:
 
 def _to_response(record: dict[str, Any]) -> ServerRecord:
     return ServerRecord(**record, summary=_summarise(record["interface"]))
+
+
+def _to_approval_response(record: dict[str, Any]) -> ApprovalRecord:
+    return ApprovalRecord(**record, summary=_summarise(record["new_interface"]))
 
 
 @app.post("/servers", response_model=ServerRecord, status_code=201)
@@ -88,6 +95,91 @@ def list_servers(
     """List registered servers, most recent first, optionally filtered by name."""
     records, total = database.get_recent(limit=limit, offset=offset, name=name)
     return ServerListResponse(servers=[_to_response(r) for r in records], total=total)
+
+
+@app.post("/approvals", response_model=ApprovalRecord, status_code=201)
+def create_approval(submission: ApprovalRequest) -> ApprovalRecord:
+    """Open a pending approval request for a changed interface."""
+    derived = aggregate_hash(submission.new_interface)
+    if derived != submission.new_hash:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "submitted new_hash does not match the submitted interface "
+                f"(expected {derived})"
+            ),
+        )
+    record = database.create_approval(
+        submission.name,
+        submission.recorded_hash,
+        submission.new_hash,
+        submission.new_interface,
+        submission.diff,
+    )
+    return _to_approval_response(record)
+
+
+@app.get("/approvals", response_model=ApprovalListResponse)
+def list_pending_approvals(
+    status: str = Query(default="pending", description="Only 'pending' is supported"),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ApprovalListResponse:
+    """List pending approval requests, most recent first."""
+    records, total = database.get_pending_approvals(limit=limit, offset=offset)
+    return ApprovalListResponse(
+        approvals=[_to_approval_response(r) for r in records], total=total
+    )
+
+
+@app.get("/approvals/{approval_id}", response_model=ApprovalRecord)
+def get_approval(approval_id: int) -> ApprovalRecord:
+    """Return a single approval request (the client polls this until resolved)."""
+    record = database.get_approval(approval_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="no approval request with this id")
+    return _to_approval_response(record)
+
+
+@app.post("/approvals/{approval_id}/approve", response_model=ApprovalRecord)
+def approve_request(approval_id: int) -> ApprovalRecord:
+    """Approve a request: register the new interface, then mark it approved.
+
+    Registering first guarantees that the moment a polling client observes
+    ``approved`` the trusted ``(name, hash)`` row already exists, so its next
+    verification passes.  Both steps are idempotent, so a double-click or retry
+    is harmless.
+    """
+    record = database.get_approval(approval_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="no approval request with this id")
+    if record["status"] != "pending":
+        return _to_approval_response(record)
+
+    derived = aggregate_hash(record["new_interface"])
+    if derived != record["new_hash"]:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "stored new_hash does not match the stored interface "
+                f"(expected {derived})"
+            ),
+        )
+    database.insert_server(record["name"], record["new_hash"], record["new_interface"])
+    resolved = database.resolve_approval(approval_id, "approved")
+    return _to_approval_response(resolved or record)
+
+
+@app.post("/approvals/{approval_id}/reject", response_model=ApprovalRecord)
+def reject_request(approval_id: int) -> ApprovalRecord:
+    """Reject a request: mark it rejected without registering anything."""
+    record = database.get_approval(approval_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="no approval request with this id")
+    if record["status"] != "pending":
+        return _to_approval_response(record)
+    resolved = database.resolve_approval(approval_id, "rejected")
+    return _to_approval_response(resolved or record)
 
 
 _FRONTEND_INDEX = Path(__file__).resolve().parent.parent / "frontend" / "index.html"

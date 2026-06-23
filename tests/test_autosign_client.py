@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import threading
 
 import anyio
 import mcp.types as types
@@ -18,7 +19,7 @@ from kiji_safeguard import (
     canonical_json,
     extract_interface_from_listing,
 )
-from tests.conftest import make_server
+from tests.conftest import make_server, resolve_pending
 
 
 def _connect(lowlevel_server) -> None:
@@ -226,6 +227,42 @@ def test_connect_enforce_aborts_connection(live_registry, monkeypatch):
     # exception group, so unwrap before asserting.
     with pytest.raises(BaseException) as excinfo:
         _connect(make_server(name="never-registered")._mcp_server)
+    assert _contains_safeguard_error(excinfo.value)
+
+
+def test_connect_approval_mode_approved_proceeds(live_registry, monkeypatch, capsys):
+    MCPSigner.from_server(make_server()).register(live_registry)
+    monkeypatch.setenv("KIJI_SAFEGUARD_MODE", "approval")
+    monkeypatch.setenv("KIJI_SAFEGUARD_REGISTRY", live_registry)
+    monkeypatch.setenv("KIJI_SAFEGUARD_APPROVAL_POLL_INTERVAL", "0.05")
+    monkeypatch.setenv("KIJI_SAFEGUARD_APPROVAL_TIMEOUT", "5")
+    autosign.install()
+
+    resolver = threading.Thread(
+        target=resolve_pending, args=(live_registry, "approve"), daemon=True
+    )
+    resolver.start()
+    _connect(make_server(extra_tool=True)._mcp_server)  # must not raise
+    resolver.join(timeout=3)
+    assert "approved" in capsys.readouterr().err
+
+
+def test_connect_approval_mode_rejected_aborts(live_registry, monkeypatch):
+    MCPSigner.from_server(make_server()).register(live_registry)
+    monkeypatch.setenv("KIJI_SAFEGUARD_MODE", "approval")
+    monkeypatch.setenv("KIJI_SAFEGUARD_REGISTRY", live_registry)
+    monkeypatch.setenv("KIJI_SAFEGUARD_APPROVAL_POLL_INTERVAL", "0.05")
+    monkeypatch.setenv("KIJI_SAFEGUARD_APPROVAL_TIMEOUT", "5")
+    monkeypatch.delenv("KIJI_SAFEGUARD_ENFORCE", raising=False)
+    autosign.install()
+
+    resolver = threading.Thread(
+        target=resolve_pending, args=(live_registry, "reject"), daemon=True
+    )
+    resolver.start()
+    with pytest.raises(BaseException) as excinfo:
+        _connect(make_server(extra_tool=True)._mcp_server)
+    resolver.join(timeout=3)
     assert _contains_safeguard_error(excinfo.value)
 
 
