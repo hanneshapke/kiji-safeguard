@@ -1,3 +1,10 @@
+## v0.3.0 (2026-06-22)
+
+### Feat
+
+- approval step (#9)
+- individual approval (#8)
+
 ## v0.2.0 (2026-06-12)
 
 ### Feat
