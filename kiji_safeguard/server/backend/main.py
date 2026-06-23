@@ -54,7 +54,10 @@ def _summarise(interface: list[dict[str, Any]]) -> InterfaceSummary:
 
 
 def _to_response(record: dict[str, Any]) -> ServerRecord:
-    return ServerRecord(**record, summary=_summarise(record["interface"]))
+    status = "deprecated" if record.get("superseded_by") else "active"
+    return ServerRecord(
+        **record, summary=_summarise(record["interface"]), status=status
+    )
 
 
 def _to_approval_response(record: dict[str, Any]) -> ApprovalRecord:
@@ -73,7 +76,9 @@ def register_server(submission: ServerRegistration) -> ServerRecord:
                 f"(expected {derived})"
             ),
         )
-    record = database.insert_server(submission.name, submission.hash, submission.interface)
+    record = database.insert_server(
+        submission.name, submission.hash, submission.interface
+    )
     return _to_response(record)
 
 
@@ -82,7 +87,9 @@ def lookup_by_hash(hash_value: str) -> list[ServerRecord]:
     """Return every registration matching an interface hash."""
     records = database.get_by_hash(hash_value)
     if not records:
-        raise HTTPException(status_code=404, detail="no server registered with this hash")
+        raise HTTPException(
+            status_code=404, detail="no server registered with this hash"
+        )
     return [_to_response(record) for record in records]
 
 
@@ -147,8 +154,10 @@ def approve_request(approval_id: int) -> ApprovalRecord:
 
     Registering first guarantees that the moment a polling client observes
     ``approved`` the trusted ``(name, hash)`` row already exists, so its next
-    verification passes.  Both steps are idempotent, so a double-click or retry
-    is harmless.
+    verification passes.  When the change replaced a previously-trusted hash,
+    that earlier interface is deprecated and linked to its replacement so the
+    supersession is auditable in the UI.  Every step is idempotent, so a
+    double-click or retry is harmless.
     """
     record = database.get_approval(approval_id)
     if record is None:
@@ -166,6 +175,9 @@ def approve_request(approval_id: int) -> ApprovalRecord:
             ),
         )
     database.insert_server(record["name"], record["new_hash"], record["new_interface"])
+    recorded_hash = record["recorded_hash"]
+    if recorded_hash and recorded_hash != record["new_hash"]:
+        database.supersede(record["name"], recorded_hash, record["new_hash"])
     resolved = database.resolve_approval(approval_id, "approved")
     return _to_approval_response(resolved or record)
 

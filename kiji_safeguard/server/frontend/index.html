@@ -597,6 +597,32 @@
             .badge.checking::before {
                 background: var(--text-faint);
             }
+            .badge.deprecated {
+                color: var(--text-dim);
+                background: rgba(26, 26, 26, 0.08);
+                text-decoration: line-through;
+                text-decoration-color: var(--text-faint);
+            }
+            .badge.deprecated::before {
+                background: var(--text-faint);
+                text-decoration: none;
+            }
+
+            /* clickable hash that points at a related (superseding) record */
+            .hashlink {
+                font-family: var(--mono);
+                color: var(--accent-strong);
+                text-decoration: none;
+                border-bottom: 1px dashed var(--line);
+                cursor: pointer;
+                white-space: nowrap;
+            }
+            .hashlink:hover {
+                border-color: var(--accent-strong);
+            }
+            .hashlink .algo {
+                color: var(--text-faint);
+            }
 
             /* pending-approvals panel */
             .btn.sm {
@@ -1295,10 +1321,17 @@
 
             /* update a rendered row's badge + check cell once verified */
             function applyVerification(el, res) {
-                const [cls, label] = STATUS_MAP[res.state] || [
+                let [cls, label] = STATUS_MAP[res.state] || [
                     "pending",
                     "registered",
                 ];
+                /* a still-valid interface that an approved change has replaced
+                   is shown as deprecated rather than verified (a real hash
+                   mismatch still wins — that's the louder problem) */
+                if (el._srv && el._srv.superseded_by && res.state !== "invalid") {
+                    cls = "deprecated";
+                    label = "deprecated";
+                }
                 const badge = el.querySelector(".badge");
                 if (badge) {
                     badge.className = "badge " + cls;
@@ -1337,6 +1370,17 @@
                     h.slice(0, 12) +
                     "…" +
                     h.slice(-6)
+                );
+            }
+
+            /* a clickable shortened hash that jumps to (and opens) that record */
+            function hashLink(h) {
+                return (
+                    '<a class="hashlink" href="#recent" data-hash="' +
+                    esc(h) +
+                    '">' +
+                    shortenHash(h) +
+                    "</a>"
                 );
             }
 
@@ -1693,12 +1737,40 @@
                     '<div class="dcell"><div class="k">interface check</div>' +
                     '<div class="v crypto checking">checking…</div></div>';
 
+                /* a cell whose value links to a related interface hash */
+                const linkCell = (k, hash, note) =>
+                    '<div class="dcell"><div class="k">' +
+                    k +
+                    '</div><div class="v">' +
+                    hashLink(hash) +
+                    (note ? ' <span class="muted">' + esc(note) + "</span>" : "") +
+                    "</div></div>";
+
+                let links = "";
+                if (s.superseded_by)
+                    links += linkCell(
+                        "superseded by",
+                        s.superseded_by,
+                        s.superseded_at ? "on " + formatISO(s.superseded_at) : "",
+                    );
+                if (s.supersedes)
+                    links += linkCell("supersedes", s.supersedes, "");
+
+                const note = s.superseded_by
+                    ? '<div class="detail-note">⚠ This interface has been ' +
+                      "superseded by a newer approved version and is deprecated " +
+                      "— agents should trust the replacement hash above.</div>"
+                    : "";
+
                 return (
-                    '<div class="detail" onclick="event.stopPropagation()"><div class="dgrid">' +
+                    '<div class="detail" onclick="event.stopPropagation()">' +
+                    note +
+                    '<div class="dgrid">' +
                     cell("server name", s.name, s.name) +
                     checkCell +
                     cell("full hash", "sha256:" + s.hash, "sha256:" + s.hash) +
                     cell("registered at", formatISO(s.registered_at)) +
+                    links +
                     "</div>" +
                     setupHTML(s) +
                     "</div>"
@@ -1828,6 +1900,26 @@
                             .catch(toast);
                     });
                 });
+                bindHashlinks();
+            }
+
+            /* wire supersession hash links (in both tables) to a lookup-and-open */
+            function bindHashlinks() {
+                document.querySelectorAll(".hashlink").forEach((a) => {
+                    if (a.dataset.bound) return;
+                    a.dataset.bound = "1";
+                    a.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        gotoHash(a.dataset.hash);
+                    });
+                });
+            }
+
+            /* drop a hash into the search box and open the matching record */
+            function gotoHash(hash) {
+                qEl.value = hash;
+                doSearch(true);
             }
 
             let tT;
@@ -2034,6 +2126,11 @@
                             (a.diff
                                 ? '<pre class="diff">' + esc(a.diff) + "</pre>"
                                 : '<div class="iface">interface changed</div>') +
+                            (a.recorded_hash
+                                ? '<div class="iface" style="margin-top:12px">replaces ' +
+                                  hashLink(a.recorded_hash) +
+                                  " &middot; deprecated once approved</div>"
+                                : "") +
                             '<div class="approval-actions">' +
                             '<button class="btn sm approve" data-aid="' +
                             a.id +
@@ -2067,6 +2164,7 @@
                             );
                         });
                     });
+                bindHashlinks();
             }
 
             async function decide(id, action) {
