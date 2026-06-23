@@ -4,6 +4,8 @@ version = "0.3.0"
 description = "Sign and verify MCP server interfaces. Detects when tools, schemas or descriptions change."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.optional-dependencies]

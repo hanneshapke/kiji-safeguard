@@ -278,3 +278,7 @@ the registry runs.
 uv venv && uv pip install -e ".[dev]"
 pytest
 ```
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
