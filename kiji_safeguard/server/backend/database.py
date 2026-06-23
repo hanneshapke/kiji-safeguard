@@ -21,6 +21,12 @@ CREATE TABLE IF NOT EXISTS servers (
     hash TEXT NOT NULL,
     interface TEXT NOT NULL,
     registered_at TEXT NOT NULL,
+    -- Supersession chain, written when an approved change replaces an interface:
+    -- the new record points back at the hash it replaced (``supersedes``), the
+    -- earlier record is deprecated in place (``superseded_by``/``superseded_at``).
+    supersedes TEXT,
+    superseded_by TEXT,
+    superseded_at TEXT,
     UNIQUE (name, hash)
 );
 CREATE INDEX IF NOT EXISTS idx_servers_hash ON servers (hash);
@@ -55,12 +61,28 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
+# Columns added after the first release; ``init_db`` back-fills them on
+# databases created before supersession tracking existed.
+_SERVER_SUPERSESSION_COLUMNS = ("supersedes", "superseded_by", "superseded_at")
+
+
+def _migrate_servers(connection: sqlite3.Connection) -> None:
+    """Add supersession columns to a pre-existing ``servers`` table."""
+    existing = {row["name"] for row in connection.execute("PRAGMA table_info(servers)")}
+    for column in _SERVER_SUPERSESSION_COLUMNS:
+        if column not in existing:
+            connection.execute(f"ALTER TABLE servers ADD COLUMN {column} TEXT")
+
+
 def init_db() -> None:
     with _connect() as connection:
         connection.executescript(_SCHEMA)
+        _migrate_servers(connection)
 
 
-def insert_server(name: str, hash_value: str, interface: list[dict[str, Any]]) -> dict[str, Any]:
+def insert_server(
+    name: str, hash_value: str, interface: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Insert a registration; re-registering the same (name, hash) is a no-op."""
     registered_at = datetime.now(timezone.utc).isoformat()
     with _connect() as connection:
@@ -132,7 +154,14 @@ def create_approval(
             "INSERT INTO approvals "
             "(name, recorded_hash, new_hash, new_interface, diff, status, created_at) "
             "VALUES (?, ?, ?, ?, ?, 'pending', ?)",
-            (name, recorded_hash, new_hash, json.dumps(new_interface), diff, created_at),
+            (
+                name,
+                recorded_hash,
+                new_hash,
+                json.dumps(new_interface),
+                diff,
+                created_at,
+            ),
         )
         row = connection.execute(
             "SELECT * FROM approvals WHERE id = ?", (cursor.lastrowid,)
@@ -184,6 +213,27 @@ def resolve_approval(approval_id: int, status: str) -> dict[str, Any] | None:
     return _approval_row_to_record(row) if row is not None else None
 
 
+def supersede(name: str, old_hash: str, new_hash: str) -> None:
+    """Record that ``(name, new_hash)`` replaces ``(name, old_hash)``.
+
+    Deprecates the earlier record in place (``superseded_by``/``superseded_at``)
+    and links the newer record back to the hash it replaced (``supersedes``).
+    Each update is a no-op when its row is absent, so an ``old_hash`` that was
+    never registered simply records nothing on the old side.
+    """
+    superseded_at = datetime.now(timezone.utc).isoformat()
+    with _connect() as connection:
+        connection.execute(
+            "UPDATE servers SET superseded_by = ?, superseded_at = ? "
+            "WHERE name = ? AND hash = ?",
+            (new_hash, superseded_at, name, old_hash),
+        )
+        connection.execute(
+            "UPDATE servers SET supersedes = ? WHERE name = ? AND hash = ?",
+            (old_hash, name, new_hash),
+        )
+
+
 def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
@@ -191,6 +241,9 @@ def _row_to_record(row: sqlite3.Row) -> dict[str, Any]:
         "hash": row["hash"],
         "interface": json.loads(row["interface"]),
         "registered_at": row["registered_at"],
+        "supersedes": row["supersedes"],
+        "superseded_by": row["superseded_by"],
+        "superseded_at": row["superseded_at"],
     }
 
 

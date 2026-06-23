@@ -155,6 +155,41 @@ def test_reject_marks_rejected_without_registering(client):
     assert client.get(f"/servers/{body['new_hash']}").status_code == 404
 
 
+def test_approve_supersedes_recorded_hash(client):
+    """Approving a change deprecates the old hash and links the two records."""
+    old = client.post("/servers", json=_registration()).json()
+    assert old["status"] == "active"
+
+    new_tools = TOOLS + [
+        {"type": "tool", "name": "extra", "description": "New.", "input_schema": {}}
+    ]
+    body = _approval_body(tools=new_tools, recorded_hash=old["hash"])
+    created = client.post("/approvals", json=body).json()
+    client.post(f"/approvals/{created['id']}/approve")
+
+    old_after = client.get(f"/servers/{old['hash']}").json()[0]
+    assert old_after["status"] == "deprecated"
+    assert old_after["superseded_by"] == body["new_hash"]
+    assert old_after["superseded_at"]
+    assert old_after["supersedes"] is None
+
+    new_after = client.get(f"/servers/{body['new_hash']}").json()[0]
+    assert new_after["status"] == "active"
+    assert new_after["supersedes"] == old["hash"]
+    assert new_after["superseded_by"] is None
+
+
+def test_approve_without_recorded_hash_supersedes_nothing(client):
+    body = _approval_body()
+    created = client.post("/approvals", json=body).json()
+    client.post(f"/approvals/{created['id']}/approve")
+
+    record = client.get(f"/servers/{body['new_hash']}").json()[0]
+    assert record["status"] == "active"
+    assert record["supersedes"] is None
+    assert record["superseded_by"] is None
+
+
 def test_approve_is_idempotent(client):
     created = client.post("/approvals", json=_approval_body()).json()
     client.post(f"/approvals/{created['id']}/approve")

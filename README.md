@@ -91,7 +91,10 @@ silently warns. Instead the agent **pauses** and opens a request in the
 registry's **Pending Approvals** panel showing the exact diff. A reviewer
 clicks **Approve** — the new interface is registered as trusted and the agent
 proceeds — or **Reject**, which hard-blocks execution (a `SafeguardError`,
-regardless of the enforce flag). If no one decides within
+regardless of the enforce flag). On approval the hash the change replaced is
+**deprecated** rather than deleted: the two records are cross-linked
+(`supersedes` / `superseded_by`) and the earlier one is shown as `deprecated`
+in the web UI, so the supersession stays auditable. If no one decides within
 `KIJI_SAFEGUARD_APPROVAL_TIMEOUT`, it falls back to the usual enforce/warn
 behaviour. Approval mode is aimed at the agent/client side; on a server it
 blocks `FastMCP.run` startup until a decision is made.
@@ -248,7 +251,7 @@ from "same interface registered under a different name".
 | `POST /approvals` | Open an approval request `{name, recorded_hash?, new_hash, new_interface, diff}` for a changed interface. Rejects a hash that doesn't match the interface (400). Idempotent per pending `(name, new_hash)`. |
 | `GET /approvals?status=pending&limit=&offset=` | Pending approval requests awaiting a human decision. |
 | `GET /approvals/{id}` | A single request (clients poll this until it resolves). |
-| `POST /approvals/{id}/approve` | Register the new interface as trusted, then mark the request approved. |
+| `POST /approvals/{id}/approve` | Register the new interface as trusted, deprecate the `recorded_hash` it replaced (cross-linking the two via `supersedes`/`superseded_by`), then mark the request approved. |
 | `POST /approvals/{id}/reject` | Mark the request rejected without registering anything. |
 | `GET /` | Web UI: browse, search by name or hash, inspect interfaces, and approve/reject pending changes. |
 

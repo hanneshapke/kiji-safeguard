@@ -39,6 +39,16 @@ class ServerRecord(BaseModel):
     interface: list[dict[str, Any]]
     registered_at: str
     summary: InterfaceSummary
+    status: str = "active"  # active | deprecated (superseded by a newer interface)
+    supersedes: str | None = Field(
+        default=None, description="Hash of the earlier interface this one replaced"
+    )
+    superseded_by: str | None = Field(
+        default=None, description="Hash of the newer interface that replaced this one"
+    )
+    superseded_at: str | None = Field(
+        default=None, description="When this interface was superseded"
+    )
 
 
 class ServerListResponse(BaseModel):
