@@ -6,7 +6,7 @@
 #
 # Real work lives in render.sh so CI and humans run the exact same thing.
 
-.PHONY: all hero magic cli clean
+.PHONY: all hero magic cli proxy clean
 
 all:
 	./render.sh
@@ -19,6 +19,9 @@ magic:
 
 cli:
 	./render.sh 03-cli-tour
+
+proxy:
+	./render.sh 04-proxy-tripwire
 
 clean:
 	rm -f gif/*.gif

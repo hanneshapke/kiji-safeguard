@@ -250,6 +250,10 @@ The proxy serves the exact interface it verified for the `tools/list` (and
 prompt/resource list) responses, then forwards `call_tool` and the rest live —
 so what the model sees is always what was checked.
 
+*Watch it: the `04-proxy-tripwire` VHS tape in [`demo/`](demo/) records a client
+connecting through the proxy — the real tool on a clean server, and a tripwire
+the moment a tampered build ships. Render it with `make -C demo proxy`.*
+
 ### Remote (HTTP / SSE) servers
 
 The same command fronts a **remote** MCP server: give it `--upstream-url`
