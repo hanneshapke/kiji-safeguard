@@ -174,6 +174,82 @@ trusted. `verify` mode with enforcement narrows this (an unregistered name
 fails instead of being adopted), but the full fix — pinning the *expected*
 name per configured server on the agent side — is future work.
 
+## Using it with Claude Code, Zed and other MCP clients
+
+The magic import puts the agent-side check *inside* a Python client process.
+Claude Code (TypeScript) and Zed (Rust) can't run it — so for them the
+safeguard ships as a **verifying proxy** you point the client at instead of the
+real server:
+
+```
+Claude Code / Zed  ──MCP──▶  kiji-safeguard proxy  ──MCP──▶  upstream server
+                              (verifies the wire interface
+                               against the registry here)
+```
+
+Because the proxy hashes what actually arrives **over the wire**, it works for
+any client and any upstream — including `npx`/node and other servers whose
+source you don't have (which `kiji-safeguard verify <file.py>` can't load). It
+is the agent-side security boundary, just hosted in its own process.
+
+```bash
+pip install "kiji-safeguard[proxy]"   # pulls in the MCP SDK for the proxy process
+```
+
+Point the client's server command at the proxy and put the real command after
+a `--` separator:
+
+```jsonc
+// Claude Code — .mcp.json  (or: claude mcp add)
+{
+  "mcpServers": {
+    "stock-prices": {
+      "command": "kiji-safeguard",
+      "args": ["proxy", "--", "npx", "some-mcp-server"],
+      "env": { "KIJI_SAFEGUARD_REGISTRY": "http://127.0.0.1:8000" }
+    }
+  }
+}
+```
+
+```jsonc
+// Zed — settings.json
+{
+  "context_servers": {
+    "stock-prices": {
+      "command": {
+        "path": "kiji-safeguard",
+        "args": ["proxy", "--", "npx", "some-mcp-server"],
+        "env": { "KIJI_SAFEGUARD_REGISTRY": "http://127.0.0.1:8000" }
+      }
+    }
+  }
+}
+```
+
+First connection registers (trust-on-first-use), every connection after
+verifies. The same `KIJI_SAFEGUARD_MODE` / `KIJI_SAFEGUARD_ENFORCE` /
+`approval` knobs apply, plus two proxy-only switches:
+
+| Variable / flag | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `KIJI_SAFEGUARD_PROXY_ON_BLOCK` / `--on-block` | `tripwire` / `fail` | `tripwire` | On a blocked interface, serve a **tripwire** (connect, but expose zero real tools plus one `kiji_safeguard_blocked` notice explaining the change) or **refuse** the connection outright |
+| `KIJI_SAFEGUARD_PROXY_EXPECT_NAME` / `--expect-name` | server name | unset | The name the upstream must report. A mismatch is a verification failure — this is the per-server expected-name **pinning** that closes the rename hole below |
+
+A blocked interface (enforce on) defaults to the tripwire, so the user sees
+*why* their tools vanished — with the interface diff — instead of a silently
+dead server. `--on-block fail` aborts the connection instead. Pinning the
+expected name turns the README's [known limitation](#threat-model-who-should-run-what)
+(a tampered server renaming itself to dodge the check) into a hard failure:
+
+```bash
+kiji-safeguard proxy --expect-name stock-prices -- npx some-mcp-server
+```
+
+The proxy serves the exact interface it verified for the `tools/list` (and
+prompt/resource list) responses, then forwards `call_tool` and the rest live —
+so what the model sees is always what was checked.
+
 ## Quickstart
 
 ```bash
@@ -207,6 +283,9 @@ kiji-safeguard verify mcp_servers/stock_price_server.py
 
 # Print the interface hash without touching the registry
 kiji-safeguard hash mcp_servers/stock_price_server.py
+
+# Front any stdio server with the verifying proxy (for Claude Code / Zed / …)
+kiji-safeguard proxy -- npx some-mcp-server
 ```
 
 ## Programmatic API
@@ -263,7 +342,9 @@ Storage is SQLite (`KIJI_SAFEGUARD_DB`, default `kiji_safeguard_registry.db`).
 kiji_safeguard/        # client library (stdlib-only, no dependencies)
 ├── signer.py          # interface extraction, hashing, register/verify
 ├── autosign.py        # the magic import hook
-└── cli.py             # hash / register / verify / serve
+├── _config.py         # shared env/policy primitives (no side effects)
+├── proxy.py           # verifying MCP proxy (needs the [proxy] extra to run)
+└── cli.py             # hash / register / verify / proxy / serve
 server/                # registry service (mirrors agent-signing's layout)
 ├── backend/
 │   ├── main.py        # FastAPI endpoints

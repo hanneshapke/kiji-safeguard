@@ -81,6 +81,53 @@ def _cmd_verify(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def _cmd_proxy(args: argparse.Namespace) -> None:
+    import anyio
+
+    from .proxy import run_stdio_proxy
+
+    target = list(args.target)
+    if target and target[0] == "--":
+        target = target[1:]
+    if not target:
+        raise SystemExit(
+            "usage: kiji-safeguard proxy [options] -- <command> [args...]"
+        )
+
+    if args.registry:
+        os.environ["KIJI_SAFEGUARD_REGISTRY"] = args.registry
+    if args.on_block:
+        os.environ["KIJI_SAFEGUARD_PROXY_ON_BLOCK"] = args.on_block
+    expected_name = args.expect_name or os.environ.get("KIJI_SAFEGUARD_PROXY_EXPECT_NAME")
+    if expected_name:
+        os.environ["KIJI_SAFEGUARD_PROXY_EXPECT_NAME"] = expected_name
+
+    from ._config import SafeguardError
+
+    def _find_safeguard_error(exc: BaseException) -> SafeguardError | None:
+        if isinstance(exc, SafeguardError):
+            return exc
+        for sub in getattr(exc, "exceptions", ()):
+            found = _find_safeguard_error(sub)
+            if found is not None:
+                return found
+        return None
+
+    # Forward the proxy's full environment to the upstream so anything the
+    # client configured (API keys, and the KIJI_SAFEGUARD_* knobs) reaches it,
+    # exactly as if the client had launched the upstream directly.
+    upstream_env = dict(os.environ)
+
+    command, *cmd_args = target
+    try:
+        anyio.run(run_stdio_proxy, command, cmd_args, upstream_env, expected_name)
+    except BaseException as exc:  # noqa: BLE001 - surface clean message, re-raise rest
+        blocked = _find_safeguard_error(exc)
+        if blocked is None:
+            raise
+        raise SystemExit(f"[kiji-safeguard] {blocked}") from exc
+
+
 def _cmd_serve(args: argparse.Namespace) -> None:
     try:
         import uvicorn
@@ -119,6 +166,37 @@ def main(argv: list[str] | None = None) -> None:
     add_target(verify_parser)
     verify_parser.add_argument("--registry", default=DEFAULT_REGISTRY_URL)
     verify_parser.set_defaults(func=_cmd_verify)
+
+    proxy_parser = subparsers.add_parser(
+        "proxy",
+        help="Run a verifying MCP proxy in front of a stdio server",
+        description=(
+            "Spawn an upstream stdio MCP server and re-expose it to a "
+            "downstream client (Claude Code, Zed, ...), verifying its "
+            "interface against the registry on connect. Put the upstream "
+            "command after a -- separator."
+        ),
+    )
+    proxy_parser.add_argument(
+        "--registry", default=None, help="Registry base URL (overrides the env var)"
+    )
+    proxy_parser.add_argument(
+        "--expect-name",
+        default=None,
+        help="Server name the upstream must report (pins against renames)",
+    )
+    proxy_parser.add_argument(
+        "--on-block",
+        choices=("tripwire", "fail"),
+        default=None,
+        help="On a blocked interface: serve a tripwire (default) or refuse the connection",
+    )
+    proxy_parser.add_argument(
+        "target",
+        nargs=argparse.REMAINDER,
+        help="-- followed by the upstream command and its arguments",
+    )
+    proxy_parser.set_defaults(func=_cmd_proxy)
 
     serve_parser = subparsers.add_parser("serve", help="Run the registry server")
     serve_parser.add_argument("--host", default="127.0.0.1")

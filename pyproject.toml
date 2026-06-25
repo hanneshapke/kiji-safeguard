@@ -13,6 +13,11 @@ server = [
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
+# The verifying proxy needs the MCP SDK in its own process; the client library
+# itself stays dependency-free, so this is opt-in.
+proxy = [
+    "mcp>=1.10.0",
+]
 dev = [
     "fastapi>=0.110",
     "uvicorn>=0.29",

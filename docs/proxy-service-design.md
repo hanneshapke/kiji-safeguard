@@ -1,6 +1,16 @@
 # Design: a verifying MCP proxy
 
-Status: **draft / sketch** · Owner: TBD · Target branch: `claude/mcp-safeguard-usage-3bfadi`
+Status: **stdio implemented (Phases 0–4, 6); HTTP (Phase 5) deferred** · Target branch: `claude/mcp-safeguard-usage-3bfadi`
+
+> **Implementation status.** The stdio proxy is built and tested:
+> `kiji_safeguard/proxy.py` (verdict logic, snapshot capture, transparent
+> forward, tripwire, approval, name pinning), a `kiji-safeguard proxy`
+> subcommand, the `[proxy]` extra, README docs, and `tests/test_proxy.py`
+> (incl. a real-subprocess end-to-end run). Shared env/policy primitives were
+> factored into `kiji_safeguard/_config.py` so the proxy reuses them without
+> importing `autosign` (which would install the client hook and double-verify
+> the proxy's own upstream connection). **Phase 5 (HTTP/SSE) is not yet
+> implemented** and remains future work behind the same transport seam.
 
 ## 1. Problem
 
