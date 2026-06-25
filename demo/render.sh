@@ -60,7 +60,7 @@ if [ "$#" -gt 0 ]; then
   tapes=()
   for arg in "$@"; do tapes+=("${arg%.tape}.tape"); done
 else
-  tapes=(01-rug-pull.tape 02-magic-import.tape 03-cli-tour.tape)
+  tapes=(01-rug-pull.tape 02-magic-import.tape 03-cli-tour.tape 04-proxy-tripwire.tape)
 fi
 
 for tape in "${tapes[@]}"; do

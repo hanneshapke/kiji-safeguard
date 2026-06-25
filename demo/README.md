@@ -16,11 +16,14 @@ demo/
 │   ├── _common.tape       # shared theme, fonts, and venv/registry setup
 │   ├── 01-rug-pull.tape   # HERO: register → verify → tamper → fail
 │   ├── 02-magic-import.tape  # the one-liner: first sight → verified → refuse
-│   └── 03-cli-tour.tape   # hash / show-interface / register / verify
+│   ├── 03-cli-tour.tape   # hash / show-interface / register / verify
+│   └── 04-proxy-tripwire.tape # the proxy: forward clean → tripwire on tamper
 ├── fixtures/
 │   ├── weather_server.py          # clean, reviewed interface (mcp-only, no keys)
 │   ├── weather_server_tampered.py # same name, poisoned description + widened schema
-│   └── serve_once.py              # fire the magic-import hook once, then exit
+│   ├── serve_once.py              # fire the magic-import hook once, then exit
+│   ├── proxy_upstream.py          # third-party 'weather' server (no import); clean/tampered via env
+│   └── proxy_client.py            # stand-in client that connects *through* the proxy
 └── gif/
     ├── rug-pull.svg       # static poster (committed; renders before any GIF exists)
     └── *.gif              # rendered output (run `make`)
@@ -40,14 +43,20 @@ CI — can render them.
 | 01 | **`01-rug-pull.tape`** — the hero | Top of README, landing-page hero | **register** the reviewed `weather` interface → **verify** it (seal holds, green `OK`) → a *tampered build of the same server* ships → **verify** fails (red `FAILED`, the diff of the poisoned description + new param, two diverging hashes) → `exit code: 1`, ready to fail a CI gate. |
 | 02 | **`02-magic-import.tape`** — the one-liner | "The magic one-liner" section | `grep` shows the single `import kiji_safeguard.autosign` line → **first run** registers (trust-on-first-use) → **second run** verifies → tamper a tool and run under `KIJI_SAFEGUARD_ENFORCE=1` → the server **refuses to start**. |
 | 03 | **`03-cli-tour.tape`** — the CLI | Quickstart / docs | `hash` (no registry) → `hash --show-interface` (what actually gets hashed) → `register` → `verify`. The four verbs in one pass. |
+| 04 | **`04-proxy-tripwire.tape`** — the proxy | "Using it with Claude Code, Zed" section | A client connects *through* `kiji-safeguard proxy` to a third-party `weather` server (no safeguard import of its own): **first sight** verifies and forwards the real `get_forecast` → a *tampered build of the same server* ships (poisoned description, widened schema) → in strict mode the proxy serves a **tripwire**, so the client sees only a `kiji_safeguard_blocked` notice. The poisoned tool never reaches the model. |
 
-### Why these three, and not more
+### Why these, and not more
 
 - **The rug pull is the whole product in 25 seconds.** It's the one GIF that
   has to exist; everything else is supporting material. It earns the top of the
   README.
 - **The one-liner answers "what do *I* have to do?"** — nothing but an import.
 - **The CLI tour serves the "I want explicit control / a CI gate" reader.**
+- **The proxy tripwire answers "what about Claude Code / Zed?"** — the clients
+  that can't run the import. It's the rug pull retold from the *client's* seat:
+  the same tamper, but the payoff is the poisoned tool vanishing before the
+  model can call it. The upstream here deliberately has no safeguard import (a
+  third-party server you don't control), so the proxy is doing all the work.
 - **Approval mode is deliberately *not* a tape.** It is a human-in-the-loop
   flow whose payoff is the registry's **Pending Approvals** panel in the
   browser — a terminal recording can't show the click that matters. Capture it
@@ -97,7 +106,10 @@ make -C demo hero       # just the rug-pull hero GIF
 > machines. `serve_once.py` stubs the stdio transport after the safeguard hook
 > fires, so tape 02 never blocks on a real server. If a future `mcp` release
 > changes that internal, fall back to `python weather_server.py < /dev/null`
-> (run the real server, feed it EOF) — the hook output is identical.
+> (run the real server, feed it EOF) — the hook output is identical. Tape 04
+> needs no such trick: `proxy_client.py` drives a *real* upstream through the
+> proxy and exits on its own once it has listed the tools, so the recording
+> terminates cleanly.
 
 ## Wiring the GIFs into the README and landing page
 
