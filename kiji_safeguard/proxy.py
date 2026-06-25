@@ -361,6 +361,85 @@ def decide_serving(
     return False, blocked_notice(snapshot.name or "upstream", decision)
 
 
+# --- serving (shared core + transports) -------------------------------------
+
+
+async def prepare_server(
+    upstream: Any, init_result: Any, expected_name: str | None = None
+) -> Any:
+    """Capture, verify and build the downstream server for an upstream session.
+
+    Transport-independent: both the stdio and HTTP entrypoints call this after
+    they have an initialized upstream ``ClientSession``.  Raises
+    :class:`_config.SafeguardError` when policy is to hard-fail a blocked
+    interface.
+    """
+    snapshot = await capture_upstream(upstream, init_result)
+    decision = guard_interface(snapshot.signer(), expected_name=expected_name)
+    forward, notice = decide_serving(snapshot, decision)
+    return build_proxy_server(snapshot, upstream, forward=forward, notice=notice)
+
+
+def build_http_app(
+    server: Any,
+    *,
+    path: str = "/mcp",
+    json_response: bool = False,
+    stateless: bool = False,
+) -> Any:
+    """Wrap a low-level MCP ``server`` in a Streamable HTTP ASGI app.
+
+    The downstream client (Claude Code / Zed remote, Cursor, ...) points its
+    MCP URL at ``http://host:port{path}``.  Returned as a Starlette app whose
+    lifespan drives the session manager, so it can be served by uvicorn.
+    """
+    import contextlib
+
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    from starlette.applications import Starlette
+    from starlette.routing import Mount
+
+    manager = StreamableHTTPSessionManager(
+        app=server, json_response=json_response, stateless=stateless
+    )
+
+    async def handle(scope: Any, receive: Any, send: Any) -> None:
+        await manager.handle_request(scope, receive, send)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: Any) -> Any:
+        async with manager.run():
+            yield
+
+    return Starlette(routes=[Mount(path, app=handle)], lifespan=lifespan)
+
+
+def _open_upstream(url: str, transport: str, headers: dict[str, str] | None) -> Any:
+    """Return the async-context-manager that connects to an HTTP upstream.
+
+    Yields ``(read, write, ...)`` streams; the extra trailing element of the
+    streamable-http tuple (a session-id getter) is ignored by the caller.
+    """
+    if transport == "sse":
+        from mcp.client.sse import sse_client
+
+        return sse_client(url, headers=headers)
+
+    import mcp.client.streamable_http as streamable_http
+
+    # mcp >= 1.28 renamed streamablehttp_client -> streamable_http_client and
+    # swapped its ``headers=`` kwarg for an injected httpx client.  Prefer the
+    # new (non-deprecated) name; fall back to the old one on older mcp.
+    new_client = getattr(streamable_http, "streamable_http_client", None)
+    if new_client is not None:
+        if headers:
+            import httpx
+
+            return new_client(url, http_client=httpx.AsyncClient(headers=headers))
+        return new_client(url)
+    return streamable_http.streamablehttp_client(url, headers=headers)
+
+
 # --- stdio entrypoint -------------------------------------------------------
 
 
@@ -387,12 +466,48 @@ async def run_stdio_proxy(
     async with stdio_client(params) as (up_read, up_write):
         async with ClientSession(up_read, up_write) as upstream:
             init_result = await upstream.initialize()
-            snapshot = await capture_upstream(upstream, init_result)
-            decision = guard_interface(snapshot.signer(), expected_name=expected_name)
-            forward, notice = decide_serving(snapshot, decision)
-            server = build_proxy_server(
-                snapshot, upstream, forward=forward, notice=notice
-            )
+            server = await prepare_server(upstream, init_result, expected_name)
             init_options = server.create_initialization_options()
             async with stdio_server() as (down_read, down_write):
                 await server.run(down_read, down_write, init_options)
+
+
+# --- HTTP / SSE entrypoint --------------------------------------------------
+
+
+async def run_http_proxy(
+    upstream_url: str,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    path: str = "/mcp",
+    upstream_transport: str = "streamable-http",
+    headers: dict[str, str] | None = None,
+    expected_name: str | None = None,
+    json_response: bool = False,
+) -> None:
+    """Run an HTTP proxy: connect to a remote upstream, serve verified downstream.
+
+    The upstream is reached over Streamable HTTP (default) or SSE; the
+    downstream is served as a Streamable HTTP endpoint on ``host:port{path}``.
+    The single upstream session is verified once at startup and stays open for
+    the lifetime of the server.
+    """
+    import uvicorn
+    from mcp.client.session import ClientSession
+
+    if expected_name is None:
+        expected_name = _expected_name()
+
+    async with _open_upstream(upstream_url, upstream_transport, headers) as streams:
+        up_read, up_write = streams[0], streams[1]
+        async with ClientSession(up_read, up_write) as upstream:
+            init_result = await upstream.initialize()
+            server = await prepare_server(upstream, init_result, expected_name)
+            app = build_http_app(server, path=path, json_response=json_response)
+            _config.note(
+                f"serving verified proxy for {upstream_url} on "
+                f"http://{host}:{port}{path}"
+            )
+            config = uvicorn.Config(app, host=host, port=port, log_level="warning")
+            await uvicorn.Server(config).serve()

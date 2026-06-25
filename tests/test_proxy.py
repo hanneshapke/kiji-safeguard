@@ -324,3 +324,115 @@ def test_stdio_cli_proxy_hard_fail_exits_cleanly(live_registry):
     assert "[kiji-safeguard]" in proc.stderr
     assert "expected 'not-weather'" in proc.stderr
     assert "Traceback" not in proc.stderr
+
+
+# --- HTTP transport (Phase 5) ----------------------------------------------
+
+
+def test_open_upstream_selects_transport(monkeypatch):
+    import mcp.client.sse as sse_mod
+    import mcp.client.streamable_http as sh_mod
+
+    calls: list[tuple[str, str]] = []
+    name = "streamable_http_client" if hasattr(sh_mod, "streamable_http_client") else "streamablehttp_client"
+    monkeypatch.setattr(
+        sh_mod, name, lambda url, headers=None: calls.append(("http", url))
+    )
+    monkeypatch.setattr(
+        sse_mod, "sse_client", lambda url, headers=None: calls.append(("sse", url))
+    )
+    proxy._open_upstream("u1", "streamable-http", None)
+    proxy._open_upstream("u2", "sse", None)
+    assert calls == [("http", "u1"), ("sse", "u2")]
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class _ThreadServer:
+    """Serve an ASGI app with uvicorn in a background thread (controllable)."""
+
+    def __init__(self, app, port: int) -> None:
+        import uvicorn
+
+        config = uvicorn.Config(
+            app, host="127.0.0.1", port=port, log_level="error", lifespan="on"
+        )
+        self._server = uvicorn.Server(config)
+
+    def __enter__(self) -> "_ThreadServer":
+        import threading
+        import time
+
+        self._thread = threading.Thread(target=self._server.run, daemon=True)
+        self._thread.start()
+        deadline = time.monotonic() + 10
+        while not self._server.started:
+            if time.monotonic() > deadline:
+                raise RuntimeError("upstream server did not start in time")
+            time.sleep(0.02)
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self._server.should_exit = True
+        self._thread.join(timeout=5)
+
+
+def test_http_proxy_forwards_over_http(live_registry, monkeypatch):
+    """Full HTTP -> HTTP chain.
+
+    A FastMCP upstream is served over Streamable HTTP in a thread; the proxy
+    connects to it as an HTTP client, verifies it (auto/TOFU) and re-serves it
+    over its own Streamable HTTP endpoint, which a real downstream client then
+    drives.
+    """
+    monkeypatch.setenv("KIJI_SAFEGUARD_MODE", "auto")
+    monkeypatch.setenv("KIJI_SAFEGUARD_REGISTRY", live_registry)
+
+    up_port = _free_port()
+    down_port = _free_port()
+    upstream_app = make_server(full=True).streamable_http_app()
+    up_url = f"http://127.0.0.1:{up_port}/mcp"
+    down_url = f"http://127.0.0.1:{down_port}/mcp"
+
+    async def drive():
+        import uvicorn
+
+        with anyio.fail_after(30):
+            async with proxy._open_upstream(up_url, "streamable-http", None) as up:
+                async with ClientSession(up[0], up[1]) as upstream:
+                    init = await upstream.initialize()
+                    server = await proxy.prepare_server(upstream, init)
+                    app = proxy.build_http_app(server, path="/mcp")
+                    dserver = uvicorn.Server(
+                        uvicorn.Config(
+                            app, host="127.0.0.1", port=down_port,
+                            log_level="error", lifespan="on",
+                        )
+                    )
+                    dserver.install_signal_handlers = lambda: None
+                    async with anyio.create_task_group() as tg:
+                        tg.start_soon(dserver.serve)
+                        while not dserver.started:
+                            await anyio.sleep(0.02)
+                        async with proxy._open_upstream(down_url, "streamable-http", None) as dn:
+                            async with ClientSession(dn[0], dn[1]) as down:
+                                di = await down.initialize()
+                                tools = sorted(
+                                    t.name for t in (await down.list_tools()).tools
+                                )
+                                added = await down.call_tool("add", {"a": 2, "b": 5})
+                        dserver.should_exit = True
+                    return di.serverInfo.name, tools, added
+
+    with _ThreadServer(upstream_app, up_port):
+        name, tools, added = anyio.run(drive)
+
+    assert name == "demo-server"
+    assert tools == ["add", "price_report", "shout"]
+    assert added.structuredContent == {"result": 7}

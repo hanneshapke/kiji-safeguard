@@ -1,16 +1,22 @@
 # Design: a verifying MCP proxy
 
-Status: **stdio implemented (Phases 0–4, 6); HTTP (Phase 5) deferred** · Target branch: `claude/mcp-safeguard-usage-3bfadi`
+Status: **all phases implemented (stdio + HTTP/SSE)** · Target branch: `claude/mcp-safeguard-usage-3bfadi`
 
-> **Implementation status.** The stdio proxy is built and tested:
+> **Implementation status.** The proxy is built and tested end to end:
 > `kiji_safeguard/proxy.py` (verdict logic, snapshot capture, transparent
 > forward, tripwire, approval, name pinning), a `kiji-safeguard proxy`
-> subcommand, the `[proxy]` extra, README docs, and `tests/test_proxy.py`
-> (incl. a real-subprocess end-to-end run). Shared env/policy primitives were
-> factored into `kiji_safeguard/_config.py` so the proxy reuses them without
-> importing `autosign` (which would install the client hook and double-verify
-> the proxy's own upstream connection). **Phase 5 (HTTP/SSE) is not yet
-> implemented** and remains future work behind the same transport seam.
+> subcommand, the `[proxy]` extra, README docs, and `tests/test_proxy.py`.
+> Shared env/policy primitives were factored into `kiji_safeguard/_config.py`
+> so the proxy reuses them without importing `autosign` (which would install
+> the client hook and double-verify the proxy's own upstream connection).
+>
+> **Phase 5 (HTTP/SSE) is now implemented.** A transport-independent
+> `prepare_server()` (capture → verify → build) is shared by both entrypoints;
+> `run_stdio_proxy` spawns a subprocess upstream, and `run_http_proxy` connects
+> to a remote upstream over Streamable HTTP (or SSE) via `_open_upstream` and
+> re-serves it through `build_http_app` (a Starlette/uvicorn Streamable HTTP
+> endpoint). Tests cover transport selection and a full HTTP→HTTP forwarding
+> chain in addition to the stdio real-subprocess runs.
 
 ## 1. Problem
 
@@ -170,10 +176,12 @@ limitation. Decide config surface: pure CLI flags vs. a `kiji-safeguard.toml`.
 Hold the handshake open on a changed interface; reuse `_await_approval` and the
 existing Pending Approvals UI. Mostly wiring, since the flow already exists.
 
-### Phase 5 — HTTP/SSE transport *(L)*
-Proxy as an HTTP MCP endpoint connecting to a remote upstream URL. More moving
-parts (streaming, reconnection, auth passthrough) than stdio; deferred until
-the stdio path is solid.
+### Phase 5 — HTTP/SSE transport *(L)* — **done**
+Proxy as an HTTP MCP endpoint connecting to a remote upstream URL
+(`--upstream-url`, `--upstream-transport streamable-http|sse`, `--header` for
+auth, `--http-host/-port/-path` for the downstream endpoint). Shares the
+`prepare_server()` core with stdio; the only new surface is `_open_upstream`
+(client connect) and `build_http_app` (Starlette/uvicorn Streamable HTTP serve).
 
 ### Phase 6 — docs, demo, hardening *(M)*
 A README "Using it with Claude Code / Zed" section, a VHS demo tape of a

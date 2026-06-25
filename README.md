@@ -250,6 +250,25 @@ The proxy serves the exact interface it verified for the `tools/list` (and
 prompt/resource list) responses, then forwards `call_tool` and the rest live —
 so what the model sees is always what was checked.
 
+### Remote (HTTP / SSE) servers
+
+The same command fronts a **remote** MCP server: give it `--upstream-url`
+instead of a `--` command, and it connects out over Streamable HTTP (or `--upstream-transport sse`)
+and re-serves the verified interface as its own Streamable HTTP endpoint for the
+client to point at:
+
+```bash
+kiji-safeguard proxy \
+  --upstream-url https://mcp.example.com/mcp \
+  --header "Authorization: Bearer $TOKEN" \
+  --http-host 127.0.0.1 --http-port 9000 --http-path /mcp
+# client connects to http://127.0.0.1:9000/mcp
+```
+
+`--header` (repeatable) is forwarded to the upstream for auth. Everything else —
+verify-on-connect, tripwire, approval, `--expect-name` pinning — works
+identically to the stdio path.
+
 ## Quickstart
 
 ```bash
